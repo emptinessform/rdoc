@@ -1,6 +1,6 @@
-# [DRAFT — 게시 전 사용자 확인 필요] Performance: relayout caching contribution
+# [게시됨: https://github.com/tensorbee/rdocx/issues/39] Performance: relayout caching contribution
 
-> 게시 대상: https://github.com/tensorbee/rdocx/issues (새 이슈)
+> 게시됨: 2026-08-22, tensorbee/rdocx#39 (사용자 승인 후)
 > 첨부 브랜치: https://github.com/emptinessform/rdocx/tree/perf-caches
 >   (main 기반, 3파일 +193/−30, PoC 패치와 분리된 순수 성능 변경)
 > 아래가 게시될 영어 원문.
