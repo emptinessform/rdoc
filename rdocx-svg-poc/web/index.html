@@ -25,9 +25,10 @@
     <option value="2">200%</option>
   </select></label>
   <span id="status">loading wasm…</span>
-  <span id="hint">click: caret · drag: select · Ctrl+C: copy · type/Backspace/←→</span>
+  <span id="hint">click: caret · drag: select · type/Enter/Backspace · Ctrl+B/I/U · Ctrl+Z/Y · Ctrl+C · 한글 IME</span>
 </header>
 <div id="pages"></div>
+<input id="ime" autocomplete="off" style="position:fixed; top:0; left:-9999px; width:100px; opacity:0">
 <script type="module">
   import init, { SvgConverter } from "./pkg/rdocx_svg_poc.js";
 
@@ -238,9 +239,21 @@
     caret = { para: h.para, off: h.start + k };
     drawCaret();
     report();
+    ime.focus({ preventScroll: true });
   }
 
   // ---- editing -------------------------------------------------------------
+
+  /// Selection endpoints as an ordered document range, or null when either
+  /// endpoint has no provenance mapping.
+  function selRange() {
+    if (!sel) return null;
+    const A = hits[sel.a.id], B = hits[sel.b.id];
+    if (!A || !B || A.para === null || B.para === null) return null;
+    let pa = A.para, oa = A.start + sel.a.k, pb = B.para, ob = B.start + sel.b.k;
+    if (pb < pa || (pa === pb && ob < oa)) [pa, oa, pb, ob] = [pb, ob, pa, oa];
+    return { pa, oa, pb, ob };
+  }
 
   function edit(fn) {
     const t = performance.now();
@@ -270,14 +283,106 @@
     });
   }
 
+  function deleteSel() {
+    const r = selRange();
+    if (!r) return;
+    edit(() => {
+      const json = conv.delete_selection(r.pa, r.oa, r.pb, r.ob);
+      caret = { para: r.pa, off: r.oa };
+      sel = null;
+      return json;
+    });
+  }
+
+  function replaceSelWith(s) {
+    const r = selRange();
+    if (!r) return;
+    edit(() => {
+      conv.delete_selection(r.pa, r.oa, r.pb, r.ob);
+      const json = conv.insert(r.pa, r.oa, s);
+      caret = { para: r.pa, off: r.oa + chars(s).length };
+      sel = null;
+      return json;
+    });
+  }
+
+  function enterKey() {
+    if (!caret) return;
+    edit(() => {
+      const json = conv.split(caret.para, caret.off);
+      caret = { para: caret.para + 1, off: 0 };
+      return json;
+    });
+  }
+
+  function mergePrev() {
+    if (!caret || caret.para === 0) return;
+    const prevLen = chars(conv.paragraph_texts()[caret.para - 1] || "").length;
+    edit(() => {
+      const json = conv.merge(caret.para);
+      caret = { para: caret.para - 1, off: prevLen };
+      return json;
+    });
+  }
+
+  function toggleFmt(f) {
+    const r = selRange();
+    if (!r) { report("select some text first (Ctrl+B/I/U)"); return; }
+    if (r.pa !== r.pb) { report("format toggle: same-paragraph selections only for now"); return; }
+    edit(() => {
+      const json = conv.toggle(r.pa, r.oa, r.ob, f);
+      sel = null;                       // hit segmentation changes; refs are stale
+      caret = { para: r.pa, off: r.ob };
+      return json;
+    });
+  }
+
+  function doUndo() { edit(() => { const j = conv.undo(); caret = null; sel = null; return j; }); }
+  function doRedo() { edit(() => { const j = conv.redo(); caret = null; sel = null; return j; }); }
+
   document.addEventListener("keydown", (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") { e.preventDefault(); copySelection(); return; }
-    if (!caret || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.key.length === 1) { e.preventDefault(); typeText(e.key); }
-    else if (e.key === "Backspace") { e.preventDefault(); backspace(); }
-    else if (e.key === "ArrowLeft") { e.preventDefault(); caret.off = Math.max(0, caret.off - 1); drawCaret(); report(); }
-    else if (e.key === "ArrowRight") { e.preventDefault(); caret.off += 1; drawCaret(); report(); }
+    if (e.isComposing) return;          // IME owns these keys
+    const ctrl = e.ctrlKey || e.metaKey;
+    const key = e.key.toLowerCase();
+    if (ctrl && key === "c") { e.preventDefault(); copySelection(); return; }
+    if (ctrl && key === "z" && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
+    if (ctrl && (key === "y" || (key === "z" && e.shiftKey))) { e.preventDefault(); doRedo(); return; }
+    if (ctrl && (key === "b" || key === "i" || key === "u")) { e.preventDefault(); toggleFmt(key); return; }
+    if (ctrl || e.altKey) return;
+    if (e.key.length === 1) {
+      e.preventDefault();
+      if (selRange()) replaceSelWith(e.key);
+      else if (caret) typeText(e.key);
+    } else if (e.key === "Backspace") {
+      e.preventDefault();
+      if (selRange()) deleteSel();
+      else if (caret && caret.off === 0 && caret.para > 0) mergePrev();
+      else if (caret) backspace();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      enterKey();
+    } else if (e.key === "ArrowLeft" && caret) { e.preventDefault(); caret.off = Math.max(0, caret.off - 1); drawCaret(); report(); }
+    else if (e.key === "ArrowRight" && caret) { e.preventDefault(); caret.off += 1; drawCaret(); report(); }
   });
+
+  // ---- IME composition (Korean etc.) --------------------------------------
+
+  const ime = document.getElementById("ime");
+  let comp = null; // {base, len}: active composition span at the caret
+
+  function applyComp(data) {
+    if (!comp || !caret) return;
+    edit(() => {
+      const json = conv.replace_range(caret.para, comp.base, comp.base + comp.len, data);
+      comp.len = chars(data).length;
+      caret.off = comp.base + comp.len;
+      return json;
+    });
+  }
+
+  ime.addEventListener("compositionstart", () => { if (caret) comp = { base: caret.off, len: 0 }; });
+  ime.addEventListener("compositionupdate", (e) => applyComp(e.data || ""));
+  ime.addEventListener("compositionend", (e) => { applyComp(e.data || ""); comp = null; ime.value = ""; });
 
   // ---- load ----------------------------------------------------------------
 
@@ -300,6 +405,20 @@
     clickAt,
     type: typeText,
     backspace,
+    enter: enterKey,
+    deleteSel,
+    replaceSel: replaceSelWith,
+    toggle: toggleFmt,
+    undo: doUndo,
+    redo: doRedo,
+    paraTexts: () => conv.paragraph_texts(),
+    simIme: (steps) => {
+      ime.focus();
+      ime.dispatchEvent(new CompositionEvent("compositionstart"));
+      for (const s of steps.slice(0, -1))
+        ime.dispatchEvent(new CompositionEvent("compositionupdate", { data: s }));
+      ime.dispatchEvent(new CompositionEvent("compositionend", { data: steps[steps.length - 1] }));
+    },
     setZoom: (z) => { zoom = z; applyZoom(); },
     select: (page, x1, y1, x2, y2) => {
       const p = findHit(page, x1, y1), q = findHit(page, x2, y2);

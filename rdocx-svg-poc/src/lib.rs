@@ -596,6 +596,126 @@ fn opacity_attr(name: &str, c: &Color) -> String {
     }
 }
 
+#[cfg(test)]
+mod edit_tests {
+    use super::*;
+
+    fn texts(doc: &Document) -> Vec<String> {
+        doc.paragraphs().iter().map(|p| p.text()).collect()
+    }
+
+    /// Serialize and re-parse, asserting body text survives the round trip.
+    fn roundtrip(doc: &mut Document) -> Document {
+        let bytes = doc.to_bytes().expect("to_bytes");
+        let re = Document::from_bytes(&bytes).expect("from_bytes");
+        assert_eq!(texts(doc), texts(&re), "text differs after docx round trip");
+        re
+    }
+
+    #[test]
+    fn insert_then_delete_restores_text() {
+        let mut doc = build_demo_doc();
+        let before = texts(&doc);
+        assert!(insert_at(&mut doc, 0, 8, "XYZ"));
+        assert_eq!(&texts(&doc)[0], "rdocx SVXYZG Rendering PoC");
+        for k in 0..3 {
+            assert!(delete_char_before(&mut doc, 0, 11 - k));
+        }
+        assert_eq!(texts(&doc), before);
+        roundtrip(&mut doc);
+    }
+
+    #[test]
+    fn delete_range_within_paragraph_spans_runs() {
+        let mut doc = build_demo_doc();
+        let full = texts(&doc)[1].clone();
+        // Remove chars [5, 30) of the intro paragraph, which crosses the
+        // "This page was laid out by " / "rdocx-layout" run boundary.
+        assert!(delete_range_in_para(&mut doc, 1, 5, 30));
+        let want: String = {
+            let cs: Vec<char> = full.chars().collect();
+            cs[..5].iter().chain(cs[30..].iter()).collect()
+        };
+        assert_eq!(texts(&doc)[1], want);
+        roundtrip(&mut doc);
+    }
+
+    #[test]
+    fn split_paragraph_partitions_text_and_keeps_count() {
+        let mut doc = build_demo_doc();
+        let before = texts(&doc);
+        assert!(split_paragraph(&mut doc, 3, 6));
+        let after = texts(&doc);
+        assert_eq!(after.len(), before.len() + 1);
+        let orig: Vec<char> = before[3].chars().collect();
+        assert_eq!(after[3], orig[..6].iter().collect::<String>());
+        assert_eq!(after[4], orig[6..].iter().collect::<String>());
+        assert_eq!(after[5..], before[4..]);
+        roundtrip(&mut doc);
+    }
+
+    #[test]
+    fn merge_restores_split() {
+        let mut doc = build_demo_doc();
+        let before = texts(&doc);
+        assert!(split_paragraph(&mut doc, 3, 6));
+        assert!(merge_paragraph_into_prev(&mut doc, 4));
+        assert_eq!(texts(&doc), before);
+        roundtrip(&mut doc);
+    }
+
+    #[test]
+    fn cross_paragraph_delete_merges() {
+        let mut doc = build_demo_doc();
+        let before = texts(&doc);
+        // Delete from (1, 5) to (3, 3): tail of 1, all of 2, head 3 of 3.
+        assert!(delete_range(&mut doc, 1, 5, 3, 3));
+        let after = texts(&doc);
+        assert_eq!(after.len(), before.len() - 2);
+        let head: String = before[1].chars().take(5).collect();
+        let tail: String = before[3].chars().skip(3).collect();
+        assert_eq!(after[1], format!("{head}{tail}"));
+        roundtrip(&mut doc);
+    }
+
+    #[test]
+    fn toggle_bold_splits_runs_and_word_semantics() {
+        let mut doc = build_demo_doc();
+        // "This" (chars 0..4) of the intro paragraph: plain -> bold.
+        assert!(toggle_format(&mut doc, 1, 0, 4, 'b'));
+        {
+            let p = doc.paragraph(1).unwrap();
+            let first = p.runs().next().unwrap();
+            assert_eq!(first.text(), "This");
+            assert!(first.is_bold());
+        }
+        // Toggling the same range again clears it (all-on -> off).
+        assert!(toggle_format(&mut doc, 1, 0, 4, 'b'));
+        {
+            let p = doc.paragraph(1).unwrap();
+            let first = p.runs().next().unwrap();
+            assert!(!first.is_bold());
+        }
+        // Text content untouched throughout.
+        assert_eq!(texts(&doc)[1], texts(&build_demo_doc())[1]);
+        roundtrip(&mut doc);
+    }
+
+    #[test]
+    fn replace_range_like_ime_commit() {
+        let mut doc = build_demo_doc();
+        let before = texts(&doc)[3].clone();
+        // Simulate composition at (3, 0): "ㅎ" -> "하" -> "한글" committed.
+        assert!(insert_at(&mut doc, 3, 0, "ㅎ"));
+        assert!(delete_range_in_para(&mut doc, 3, 0, 1));
+        assert!(insert_at(&mut doc, 3, 0, "하"));
+        assert!(delete_range_in_para(&mut doc, 3, 0, 1));
+        assert!(insert_at(&mut doc, 3, 0, "한글"));
+        assert_eq!(texts(&doc)[3], format!("한글{before}"));
+        roundtrip(&mut doc);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Hit testing: geometry, provenance mapping, and edit operations
 // ---------------------------------------------------------------------------
@@ -716,6 +836,286 @@ pub fn delete_char_before(doc: &mut Document, para: usize, char_off: usize) -> b
         nt.push_str(&text[b1..]);
         Some(nt)
     })
+}
+
+/// Delete characters [start, end) within one paragraph by trimming each
+/// overlapping run's text. Runs that become empty are left in place (no
+/// public run-removal API yet — harmless to layout and to Word).
+pub fn delete_range_in_para(doc: &mut Document, para: usize, start: usize, end: usize) -> bool {
+    if end <= start {
+        return true;
+    }
+    let Some(mut p) = doc.paragraph_mut(para) else {
+        return false;
+    };
+    let mut acc = 0usize;
+    for j in 0..p.run_count() {
+        let t = p.run(j).map(|r| r.text()).unwrap_or_default();
+        let n = t.chars().count();
+        let lo = start.max(acc);
+        let hi = end.min(acc + n);
+        if lo < hi {
+            let b0 = char_to_byte(&t, lo - acc);
+            let b1 = char_to_byte(&t, hi - acc);
+            let mut nt = String::with_capacity(t.len());
+            nt.push_str(&t[..b0]);
+            nt.push_str(&t[b1..]);
+            if let Some(mut r) = p.run_mut(j) {
+                r.set_text(&nt);
+            }
+        }
+        acc += n;
+    }
+    true
+}
+
+/// Direct (uninherited) run formatting, for copying across splits/merges.
+#[derive(Clone, Default)]
+struct RunProps {
+    bold: Option<bool>,
+    italic: Option<bool>,
+    underline: Option<i32>,
+    strike: Option<bool>,
+    size: Option<f64>,
+    color: Option<String>,
+    font: Option<String>,
+}
+
+fn snapshot_runs(doc: &Document, para: usize) -> Option<Vec<(String, RunProps)>> {
+    let p = doc.paragraph(para)?;
+    Some(
+        p.runs()
+            .map(|r| {
+                (
+                    r.text(),
+                    RunProps {
+                        bold: r.bold_value(),
+                        italic: r.italic_value(),
+                        underline: r.underline_code_value(),
+                        strike: r.strike_value(),
+                        size: r.size(),
+                        color: r.color().map(str::to_owned),
+                        font: r.font_name().map(str::to_owned),
+                    },
+                )
+            })
+            .collect(),
+    )
+}
+
+fn apply_props(r: &mut rdocx::Run<'_>, props: &RunProps) {
+    r.set_bold_value(props.bold);
+    r.set_italic_value(props.italic);
+    r.set_underline_code_value(props.underline);
+    r.set_strike_value(props.strike);
+    r.set_size_value(props.size);
+    r.set_color_value(props.color.as_deref());
+    r.set_font_value(props.font.as_deref());
+}
+
+/// Split a paragraph at a character offset (Enter). The tail moves into a
+/// new paragraph inserted right after, carrying run formatting and the
+/// paragraph's style, alignment, and numbering.
+pub fn split_paragraph(doc: &mut Document, para: usize, off: usize) -> bool {
+    let Some(runs) = snapshot_runs(doc, para) else {
+        return false;
+    };
+    let Some(body_idx) = doc.paragraph_body_index(para) else {
+        return false;
+    };
+    let (style, align, numbering) = {
+        let p = doc.paragraph(para).unwrap();
+        (
+            p.style_id().map(str::to_owned),
+            p.alignment(),
+            p.numbering(),
+        )
+    };
+
+    // Partition the run list at the split offset.
+    let mut head: Vec<(String, RunProps)> = Vec::new();
+    let mut tail: Vec<(String, RunProps)> = Vec::new();
+    let mut acc = 0usize;
+    for (t, props) in &runs {
+        let n = t.chars().count();
+        if acc + n <= off {
+            head.push((t.clone(), props.clone()));
+        } else if acc >= off {
+            tail.push((t.clone(), props.clone()));
+        } else {
+            let b = char_to_byte(t, off - acc);
+            head.push((t[..b].to_owned(), props.clone()));
+            tail.push((t[b..].to_owned(), props.clone()));
+        }
+        acc += n;
+    }
+
+    // Truncate the original paragraph to the head texts.
+    {
+        let Some(mut p) = doc.paragraph_mut(para) else {
+            return false;
+        };
+        for j in 0..p.run_count() {
+            let nt = head.get(j).map(|(t, _)| t.as_str()).unwrap_or("");
+            if let Some(mut r) = p.run_mut(j) {
+                r.set_text(nt);
+            }
+        }
+    }
+
+    // New paragraph with the tail, same paragraph-level formatting.
+    let mut np = doc.insert_paragraph(body_idx + 1, "");
+    if let Some(s) = &style {
+        np.set_style(s);
+    }
+    if let Some(a) = align {
+        np.set_alignment(a);
+    }
+    if let Some((num, lvl)) = numbering {
+        np.set_numbering(num, lvl);
+    }
+    for (t, props) in &tail {
+        let mut r = np.add_run(t);
+        apply_props(&mut r, props);
+    }
+    true
+}
+
+/// Merge paragraph `para` into the previous one (Backspace at offset 0).
+pub fn merge_paragraph_into_prev(doc: &mut Document, para: usize) -> bool {
+    if para == 0 {
+        return false;
+    }
+    let Some(runs) = snapshot_runs(doc, para) else {
+        return false;
+    };
+    let Some(body_idx) = doc.paragraph_body_index(para) else {
+        return false;
+    };
+    {
+        let Some(mut prev) = doc.paragraph_mut(para - 1) else {
+            return false;
+        };
+        for (t, props) in &runs {
+            if t.is_empty() {
+                continue;
+            }
+            let mut r = prev.add_run(t);
+            apply_props(&mut r, props);
+        }
+    }
+    doc.remove_content(body_idx)
+}
+
+/// Delete an arbitrary (possibly cross-paragraph) range.
+pub fn delete_range(
+    doc: &mut Document,
+    pa: usize,
+    oa: usize,
+    pb: usize,
+    ob: usize,
+) -> bool {
+    if pa == pb {
+        return delete_range_in_para(doc, pa, oa, ob);
+    }
+    if pb < pa {
+        return false;
+    }
+    let tail_len = doc
+        .paragraph(pa)
+        .map(|p| p.text().chars().count())
+        .unwrap_or(0);
+    if !delete_range_in_para(doc, pa, oa, tail_len) {
+        return false;
+    }
+    if !delete_range_in_para(doc, pb, 0, ob) {
+        return false;
+    }
+    // Remove the fully covered middle paragraphs, then merge what is left
+    // of pb into pa. Paragraph indices shift as we remove, so always remove
+    // at pa + 1.
+    for _ in 0..pb - pa - 1 {
+        let Some(bi) = doc.paragraph_body_index(pa + 1) else {
+            return false;
+        };
+        if !doc.remove_content(bi) {
+            return false;
+        }
+    }
+    merge_paragraph_into_prev(doc, pa + 1)
+}
+
+/// Locate the run index and run-local offset for a paragraph-level offset.
+fn locate(p: &rdocx::Paragraph<'_>, off: usize) -> (usize, usize) {
+    let mut acc = 0usize;
+    let n = p.run_count();
+    for j in 0..n {
+        let len = p.run(j).map(|r| r.text().chars().count()).unwrap_or(0);
+        if off < acc + len {
+            return (j, off - acc);
+        }
+        acc += len;
+    }
+    (n.saturating_sub(1), off.saturating_sub(acc))
+}
+
+/// Toggle bold/italic/underline over [start, end) in one paragraph.
+/// Word semantics: if every covered run already has the format, clear it,
+/// otherwise set it. Runs are split at the range boundaries first.
+pub fn toggle_format(
+    doc: &mut Document,
+    para: usize,
+    start: usize,
+    end: usize,
+    fmt: char,
+) -> bool {
+    if end <= start {
+        return false;
+    }
+    let Some(mut p) = doc.paragraph_mut(para) else {
+        return false;
+    };
+    // Split at the end boundary first so earlier indices stay valid.
+    let (j2, o2) = locate(&p, end);
+    p.split_run(j2, o2);
+    let (j1, o1) = locate(&p, start);
+    p.split_run(j1, o1);
+
+    // Collect the runs fully inside the range.
+    let mut covered: Vec<usize> = Vec::new();
+    let mut acc = 0usize;
+    for j in 0..p.run_count() {
+        let len = p.run(j).map(|r| r.text().chars().count()).unwrap_or(0);
+        if len > 0 && acc >= start && acc + len <= end {
+            covered.push(j);
+        }
+        acc += len;
+    }
+    if covered.is_empty() {
+        return false;
+    }
+    let all_on = covered.iter().all(|&j| {
+        p.run(j)
+            .map(|r| match fmt {
+                'b' => r.is_bold(),
+                'i' => r.is_italic(),
+                'u' => r.is_underline(),
+                _ => false,
+            })
+            .unwrap_or(false)
+    });
+    let target = !all_on;
+    for &j in &covered {
+        if let Some(mut r) = p.run_mut(j) {
+            match fmt {
+                'b' => r.set_bold(target),
+                'i' => r.set_italic(target),
+                'u' => r.set_underline(target),
+                _ => return false,
+            }
+        }
+    }
+    true
 }
 
 /// Apply a text edit to the run containing the paragraph-level offset.
