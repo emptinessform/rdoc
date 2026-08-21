@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rdoc 지식 노트 — 문서 편집기는 어떻게 빨라지는가</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #d0d0d0;
+    --accent: #2563eb; --accent-bg: #eff6ff; --warn-bg: #fef9ec; --warn-line: #f0c040;
+    --code-bg: #f5f5f5; --card: #fafafa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d; --fg: #e6e6e6; --muted: #9aa0a8; --line: #3a3f46;
+      --accent: #60a5fa; --accent-bg: #1e2a3f; --warn-bg: #2e2a1a; --warn-line: #8a7420;
+      --code-bg: #22252b; --card: #1c1f25;
+    }
+  }
+  body {
+    margin: 0 auto; max-width: 860px; padding: 2rem 1.2rem 6rem;
+    font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    background: var(--bg); color: var(--fg); line-height: 1.7;
+  }
+  h1 { font-size: 1.7rem; border-bottom: 2px solid var(--accent); padding-bottom: .4rem; }
+  h2 { font-size: 1.3rem; margin-top: 3rem; border-left: 5px solid var(--accent); padding-left: .6rem; }
+  h3 { font-size: 1.05rem; margin-top: 2rem; }
+  p.lead { color: var(--muted); }
+  code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; font-size: .92em; }
+  .term { border-bottom: 2px dotted var(--accent); cursor: help; }
+  .box {
+    background: var(--accent-bg); border: 1px solid var(--accent);
+    border-radius: 8px; padding: .8rem 1rem; margin: 1rem 0;
+  }
+  .caveat {
+    background: var(--warn-bg); border: 1px solid var(--warn-line);
+    border-radius: 8px; padding: .8rem 1rem; margin: 1rem 0;
+  }
+  figure { margin: 1.5rem 0; text-align: center; }
+  figure svg { max-width: 100%; height: auto; }
+  figcaption { color: var(--muted); font-size: .88rem; margin-top: .5rem; }
+  table { border-collapse: collapse; margin: 1rem 0; width: 100%; }
+  th, td { border: 1px solid var(--line); padding: .45rem .7rem; text-align: left; font-size: .95rem; }
+  th { background: var(--card); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .toc { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.5rem; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .updated { color: var(--muted); font-size: .85rem; }
+  /* SVG 공통: 테마 변수를 그대로 쓴다 */
+  svg text { font-family: inherit; fill: var(--fg); }
+  svg .mut { fill: var(--muted); }
+  svg .bx { fill: var(--card); stroke: var(--line); }
+  svg .hot { fill: var(--accent-bg); stroke: var(--accent); }
+  svg .ln { stroke: var(--muted); fill: none; }
+  svg .acc { stroke: var(--accent); fill: none; }
+</style>
+</head>
+<body>
+
+<h1>rdoc 지식 노트</h1>
+<p class="lead">
+브라우저에서 도는 DOCX(워드 문서) 편집기를 만들면서 배운 것들을,
+처음 보는 사람도 따라올 수 있게 정리한 노트입니다.
+작업이 진행될 때마다 절이 추가됩니다.
+</p>
+<p class="updated">마지막 갱신: 2026-08-22</p>
+
+<div class="toc">
+<b>차례</b><br>
+1. <a href="#s1">이 프로젝트는 무엇을 하나</a><br>
+2. <a href="#s2">키 하나 누르면 무슨 일이 벌어지나 — 레이아웃 파이프라인</a><br>
+3. <a href="#s3">왜 느렸고, 캐시가 어떻게 살렸나</a><br>
+4. <a href="#s4">지문(fingerprint) — "그대로네요"를 빨리 알아내는 법</a><br>
+5. <a href="#s5">undo를 눌러도 캐시가 살아남게 — 엔진 이월</a><br>
+6. <a href="#s6">재시작 가능한 페이지네이션</a><br>
+7. <a href="#s7">완성하며 배운 것 — 체크포인트의 함정과 공유의 힘</a><br>
+</div>
+
+<h2 id="s1">1. 이 프로젝트는 무엇을 하나</h2>
+<p>
+.docx 파일을 읽어서 <b>브라우저 화면에 실제 종이처럼 그려 주고, 그 위에서
+바로 타이핑해 고칠 수 있는</b> 가벼운 편집기를 만들고 있습니다.
+무거운 계산(글자 배치, 페이지 나누기)은
+<span class="term" title="Rust로 짠 코드를 브라우저에서 돌릴 수 있게 변환한 바이너리 형식">wasm</span>으로
+컴파일된 Rust 코드가 하고, 화면 그리기는 SVG(벡터 그림)로 합니다.
+레이아웃 엔진은 오픈소스 <code>rdocx</code>를 가져다 쓰고,
+필요한 개선은 업스트림(원 저장소)에 제안해 되돌려주고 있습니다.
+</p>
+
+<h2 id="s2">2. 키 하나 누르면 무슨 일이 벌어지나 — 레이아웃 파이프라인</h2>
+<p>
+워드 프로세서는 글자 하나를 끼워 넣을 때마다 "이 문단은 몇 줄이 되지?
+줄이 늘면 다음 페이지로 밀리나?"를 다시 계산해야 합니다.
+이 계산 전체를 <b>재조판(relayout)</b>이라고 부릅니다. 단계는 이렇습니다.
+</p>
+
+<figure>
+<svg viewBox="0 0 780 150" role="img" aria-label="레이아웃 파이프라인 다이어그램">
+  <g>
+    <rect class="bx" x="10"  y="40" width="130" height="46" rx="8"/>
+    <text x="75" y="60" text-anchor="middle" font-size="13">문서(XML)</text>
+    <text x="75" y="77" text-anchor="middle" font-size="11" class="mut">.docx 내용물</text>
+    <rect class="bx" x="175" y="40" width="150" height="46" rx="8"/>
+    <text x="250" y="60" text-anchor="middle" font-size="13">블록 만들기</text>
+    <text x="250" y="77" text-anchor="middle" font-size="11" class="mut">문단→줄로 배치</text>
+    <rect class="bx" x="360" y="40" width="150" height="46" rx="8"/>
+    <text x="435" y="60" text-anchor="middle" font-size="13">페이지네이션</text>
+    <text x="435" y="77" text-anchor="middle" font-size="11" class="mut">블록→페이지 배분</text>
+    <rect class="bx" x="545" y="40" width="100" height="46" rx="8"/>
+    <text x="595" y="60" text-anchor="middle" font-size="13">후처리</text>
+    <text x="595" y="77" text-anchor="middle" font-size="11" class="mut">쪽번호 채움</text>
+    <rect class="bx" x="680" y="40" width="90" height="46" rx="8"/>
+    <text x="725" y="60" text-anchor="middle" font-size="13">SVG 렌더</text>
+    <text x="725" y="77" text-anchor="middle" font-size="11" class="mut">화면 그리기</text>
+    <path class="ln" d="M140 63 h30" marker-end="url(#ar)"/>
+    <path class="ln" d="M325 63 h30" marker-end="url(#ar)"/>
+    <path class="ln" d="M510 63 h30" marker-end="url(#ar)"/>
+    <path class="ln" d="M645 63 h30" marker-end="url(#ar)"/>
+    <text x="250" y="120" text-anchor="middle" font-size="11" class="mut">글꼴로 글자 모양·너비 계산(셰이핑) 포함</text>
+    <text x="435" y="120" text-anchor="middle" font-size="11" class="mut">"이 줄까지가 3쪽" 결정</text>
+  </g>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+</svg>
+<figcaption>키 입력 한 번마다 이 파이프라인이 통째로 다시 돕니다.</figcaption>
+</figure>
+
+<dl>
+<dt><b>블록(block)</b></dt>
+<dd>문단 하나를 페이지 폭에 맞춰 줄바꿈까지 끝낸 결과물. "이 문단은 이 3줄이다"라는
+완성된 조각입니다. 표도 하나의 블록이 됩니다.</dd>
+<dt><b>셰이핑(shaping)</b></dt>
+<dd>"안녕 hello"라는 글자열을 글꼴 파일에 물어봐서 실제 글자 모양(글리프)과
+각 글자의 폭으로 바꾸는 일. 한글·아랍어처럼 글자가 이어 붙는 문자 때문에
+생각보다 비싼 계산입니다.</dd>
+<dt><b>페이지네이션(pagination)</b></dt>
+<dd>완성된 블록들을 위에서부터 페이지에 채워 넣다가, 넘치면 다음 페이지로
+넘기는 일. "몇 쪽짜리 문서인가"가 여기서 정해집니다.</dd>
+</dl>
+
+<h2 id="s3">3. 왜 느렸고, 캐시가 어떻게 살렸나</h2>
+<p>
+처음 측정했을 때 63페이지 문서에서 <b>키 하나에 1,144ms</b>가 걸렸습니다.
+1초가 넘으니 타이핑이 불가능한 수준입니다. 범인을 찾아 보니 대부분이
+"매번 똑같은 일을 처음부터 다시 하는" 비용이었습니다.
+</p>
+<table>
+<tr><th>범인</th><th>무슨 일</th><th class="num">비용</th></tr>
+<tr><td>시스템 글꼴 스캔</td><td>PC에 설치된 글꼴 전부를 매번 다시 읽음</td><td class="num">~750ms</td></tr>
+<tr><td>글꼴 파일 복사</td><td>13~20MB짜리 한글 글꼴 파일을 매번 다시 읽고 복사</td><td class="num">~230ms</td></tr>
+<tr><td>블록 다시 만들기</td><td>안 바뀐 700개 문단도 전부 다시 줄바꿈</td><td class="num">~100ms</td></tr>
+<tr><td>페이지네이션</td><td>63페이지 전부 다시 배분</td><td class="num">~19ms</td></tr>
+</table>
+<p>
+해법은 전부 같은 아이디어입니다 — <b>한 번 한 일의 결과를 저장해 두고(캐시),
+다음에 같은 일이 오면 저장본을 꺼내 쓴다.</b>
+글꼴 스캔은 프로세스당 1회로, 글꼴 파일은 경로별로 1회만 읽게,
+셰이핑 결과는 (글꼴, 글자열, 크기)를 키로 저장,
+블록은 "문단 내용이 안 바뀌었으면 지난번 블록 재사용"으로.
+이 네 개의 캐시로 <b>1,144ms → 101ms</b>, 이후 개선(4·5절)으로 <b>37ms</b>까지 왔습니다.
+</p>
+<div class="box">
+<b>핵심 교훈</b> — 편집기는 변환기와 다릅니다. 파일을 한 번 변환할 때는 안 보이던
+비용이, 키 입력마다 반복되면 전부 "키 하나당 비용"이 됩니다. 그래서 편집기의
+성능 작업은 대부분 "반복되는 같은 일 찾아서 캐시하기"입니다.
+</div>
+
+<h2 id="s4">4. 지문(fingerprint) — "그대로네요"를 빨리 알아내는 법</h2>
+<p>
+"이 문단, 지난번과 같은가?"를 판단하려고 문단 전체를 글자 하나하나 비교하면
+그것도 느립니다. 대신 문단 내용을 <b>하나의 큰 숫자로 요약</b>합니다.
+이 요약값을 <span class="term" title="입력이 조금만 달라져도 완전히 다른 값이 나오는 요약 숫자">해시(hash)</span>
+또는 지문이라고 부릅니다. 내용이 같으면 지문이 같고, 내용이 다르면
+(사실상 확실하게) 지문이 다릅니다. 숫자 하나 비교로 "같다/다르다"가 끝납니다.
+</p>
+<figure>
+<svg viewBox="0 0 700 130" role="img" aria-label="지문 비교 다이어그램">
+  <rect class="bx" x="10" y="15" width="240" height="44" rx="8"/>
+  <text x="130" y="35" text-anchor="middle" font-size="12">"안녕하세요. 오늘 회의는…"</text>
+  <text x="130" y="51" text-anchor="middle" font-size="11" class="mut">문단 내용 + 서식 + 폭</text>
+  <rect class="hot" x="330" y="15" width="160" height="44" rx="8"/>
+  <text x="410" y="42" text-anchor="middle" font-size="13">0x7A3F…C2</text>
+  <path class="acc" d="M250 37 h75" marker-end="url(#ar2)"/>
+  <text x="290" y="30" text-anchor="middle" font-size="11" class="mut">해시</text>
+  <rect class="bx" x="10" y="72" width="240" height="44" rx="8"/>
+  <text x="130" y="92" text-anchor="middle" font-size="12">"안녕하세요. 오늘 회의는…"</text>
+  <text x="130" y="108" text-anchor="middle" font-size="11" class="mut">다음 키 입력 때 같은 문단</text>
+  <rect class="hot" x="330" y="72" width="160" height="44" rx="8"/>
+  <text x="410" y="99" text-anchor="middle" font-size="13">0x7A3F…C2</text>
+  <path class="acc" d="M250 94 h75" marker-end="url(#ar2)"/>
+  <text x="560" y="60" font-size="13">같은 지문 =</text>
+  <text x="560" y="80" font-size="13"><tspan fill="var(--accent)">캐시 재사용!</tspan></text>
+  <path class="ln" d="M495 37 c 30 0 30 15 45 20"/>
+  <path class="ln" d="M495 94 c 30 0 30 -15 45 -20"/>
+  <defs>
+    <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+</svg>
+<figcaption>지문이 같으면 지난번에 만든 블록을 그대로 꺼내 씁니다.</figcaption>
+</figure>
+<p>
+처음엔 문단 구조를 통째로 디버그 문자열로 찍어서(<code>format!("{:?}")</code>)
+그걸 해시했는데, 이 "문자열 만들기" 자체가 키 입력당 ~20ms를 먹었습니다.
+그래서 <b>전용 워커</b>를 만들었습니다: 본문 글자는 바이트 그대로 해시하고,
+서식 정보 같은 작은 구조만 디버그 문자열을 거치게. 요약 대상은 같지만
+요약을 만드는 비용이 확 줄었습니다.
+</p>
+<div class="caveat">
+<b>캐시의 함정</b> — 캐시 키(지문)에 <i>빠진</i> 정보가 있으면, 실제로는 바뀌었는데
+"같다"고 판단해 낡은 결과를 내놓습니다(stale). 예: 번호 매기기 목록의 "3."이라는
+번호는 문단 자신이 아니라 <i>앞 문단들이 몇 개였는지</i>에 달려 있어서, 문단 내용만
+지문 찍으면 놓칩니다. 그래서 번호 달린 문단은 블록 캐시에서 제외했습니다.
+캐시 설계의 반은 "키에 뭘 넣을지" 고민입니다.
+</div>
+
+<h2 id="s5">5. undo를 눌러도 캐시가 살아남게 — 엔진 이월</h2>
+<p>
+undo(되돌리기)는 "예전 문서 상태를 통째로 복원"하는 방식이라, 문서 객체를
+새로 만듭니다. 그런데 캐시(셰이핑 메모, 블록 캐시)는 낡은 문서 객체 안의
+엔진에 붙어 있어서, 새 객체를 만들면 <b>캐시가 통째로 버려졌습니다</b>.
+그래서 undo 직후 첫 재조판이 타이핑의 2배쯤 느렸습니다.
+</p>
+<p>
+해결은 이사할 때 가구를 들고 가는 것과 같습니다: 문서 객체를 갈아끼우기 전에
+낡은 객체에서 <b>엔진(캐시 포함)을 꺼내서 새 객체에 넣어 주는</b> 두 개의 API를
+만들었습니다 (<code>take_layout_engine</code> / <code>set_layout_engine</code>).
+캐시는 내용 기준(지문 키)이라 어느 문서 객체에 붙어 있든 안전합니다.
+결과: undo/redo가 타이핑과 같은 속도(75~91ms→wasm 기준)가 됐습니다.
+</p>
+
+<h2 id="s6">6. 재시작 가능한 페이지네이션 (완료 — 키 입력당 37→24~30ms)</h2>
+<p>
+지금 키 입력당 남은 비용의 큰 덩어리 하나가 페이지네이션(12~15ms)입니다.
+글자 하나 고쳤는데 <b>63페이지 전부</b>를 다시 배분하고 있기 때문입니다.
+그런데 생각해 보면: 5페이지의 문단 하나를 고치면 1~4페이지는 절대 안 바뀌고,
+줄 수가 그대로면 6페이지 이후도 안 바뀝니다.
+</p>
+<figure>
+<svg viewBox="0 0 760 210" role="img" aria-label="재시작 가능한 페이지네이션 다이어그램">
+  <text x="10" y="22" font-size="13" font-weight="bold">편집 전 (지난번 결과, 캐시에 보관)</text>
+  <g>
+    <rect class="bx" x="10"  y="34" width="66" height="88" rx="6"/>
+    <rect class="bx" x="86"  y="34" width="66" height="88" rx="6"/>
+    <rect class="bx" x="162" y="34" width="66" height="88" rx="6"/>
+    <rect class="bx" x="238" y="34" width="66" height="88" rx="6"/>
+    <rect class="bx" x="314" y="34" width="66" height="88" rx="6"/>
+    <rect class="bx" x="390" y="34" width="66" height="88" rx="6"/>
+    <text x="43"  y="83" text-anchor="middle" font-size="12">1쪽</text>
+    <text x="119" y="83" text-anchor="middle" font-size="12">2쪽</text>
+    <text x="195" y="83" text-anchor="middle" font-size="12">3쪽</text>
+    <text x="271" y="83" text-anchor="middle" font-size="12">4쪽</text>
+    <text x="347" y="83" text-anchor="middle" font-size="12">5쪽</text>
+    <text x="466" y="83" font-size="12" class="mut">… 63쪽까지</text>
+    <circle cx="238" cy="130" r="5" fill="var(--accent)"/>
+    <text x="238" y="150" text-anchor="middle" font-size="11" class="mut">체크포인트</text>
+    <text x="238" y="165" text-anchor="middle" font-size="11" class="mut">(블록 k가 4쪽을 깨끗하게 시작)</text>
+    <text x="347" y="28" text-anchor="middle" font-size="12" fill="var(--accent)">✎ 여기 수정</text>
+  </g>
+  <g>
+    <rect class="hot" x="10" y="176" width="294" height="26" rx="6"/>
+    <text x="157" y="194" text-anchor="middle" font-size="12">1~3쪽: 그대로 재사용 (복사만)</text>
+    <rect class="bx" x="314" y="176" width="142" height="26" rx="6" stroke="var(--accent)" stroke-dasharray="4 3"/>
+    <text x="385" y="194" text-anchor="middle" font-size="12">4~5쪽만 다시 배분</text>
+    <rect class="hot" x="466" y="176" width="284" height="26" rx="6"/>
+    <text x="608" y="194" text-anchor="middle" font-size="12">6~63쪽: 쪽수 그대로면 재접합</text>
+  </g>
+</svg>
+<figcaption>바뀐 곳 주변 페이지만 다시 만들고, 앞뒤는 지난번 페이지를 재사용합니다.</figcaption>
+</figure>
+<p>세 가지 재료로 만듭니다.</p>
+<ol>
+<li><b>블록 지문 목록</b> — 이번 키 입력의 블록 지문들과 지난번 지문들을 나란히
+비교하면 "몇 번째 블록부터 달라졌나"(분기점)가 나옵니다.</li>
+<li><b>체크포인트</b> — 페이지네이션 도중 "이 블록이 새 페이지를 깨끗하게
+시작했다"는 지점을 기록해 둡니다. 깨끗하다 = 문단이 페이지에 걸쳐 쪼개지지
+않았고, 이월된 각주도 없음. 여기서는 페이지네이터의 기억(상태)이 사실상
+비어 있어서, 나중에 그 지점부터 <b>재시작</b>해도 결과가 같습니다.</li>
+<li><b>재접합(splice)</b> — 분기점 이후를 다시 배분하다가 "남은 블록들이 지난번과
+완전히 같고, 지금 쪽수도 지난번과 같다"는 지점에 도달하면, 지난번 뒤쪽
+페이지들을 통째로 이어 붙이고 멈춥니다. 타이핑은 대부분 페이지 수를 안
+바꾸므로 실질적으로 <b>1~2페이지만 다시 배분</b>하게 됩니다.</li>
+</ol>
+<div class="caveat">
+<b>왜 조심해야 하나</b> — 페이지는 앞뒤 문맥의 영향을 받습니다. 예를 들어
+"다음 문단과 떨어지지 말 것(keep-with-next)" 속성은 <i>다음</i> 블록의 첫 줄
+높이를 미리 보고, 떠 있는 그림(floating drawing)은 뒤쪽 블록이 앞쪽 페이지에
+그림을 얹을 수도 있습니다. 각주는 페이지를 넘어 이어질 수 있습니다. 그래서
+이런 영향이 있는 문서(떠 있는 그림, 다중 섹션 등)는 안전하게 <b>전체
+페이지네이션으로 폴백</b>하고, 체크포인트도 영향 범위 밖에서만 잡습니다.
+그리고 항상 "캐시 경로 결과 == 전체 재계산 결과"를 테스트로 강제합니다.
+</div>
+<p>
+결과: 페이지네이션 12~15ms → <b>1~3ms</b>. 63페이지 중 실제로 다시 배분하는 건
+바뀐 곳 주변 4페이지뿐입니다("29 prefix + 4 rebuilt + 30 spliced").
+표(테이블)도 문단처럼 지문 키로 캐시해서, 키 입력당 전체가
+<b>평균 24~30ms</b> — 목표였던 30ms 게이트에 도달했습니다.
+</p>
+
+<h2 id="s7">7. 완성하며 배운 것 — 체크포인트의 함정과 공유의 힘</h2>
+
+<h3>함정 1: 체크포인트를 어디서 잡을 것인가</h3>
+<p>
+처음엔 "블록 목록을 도는 루프의 맨 위에서, 페이지가 깨끗하면 체크포인트"라고
+구현했습니다. 돌려 보니 <b>체크포인트가 단 하나도 안 잡혔습니다</b>.
+이유: 페이지 경계는 루프 사이에서 생기지 않습니다. "이 문단이 남은 공간에
+안 들어가네 → 페이지 마감 → 새 페이지에 문단 배치"가 <i>문단 배치 함수
+안에서</i> 일어나기 때문에, 루프 맨 위로 돌아왔을 때는 이미 새 페이지에
+내용이 놓인 뒤입니다. 체크포인트는 <b>블록 배치 함수의 입구</b>에서 잡아야
+했습니다. 교훈: 상태를 기록할 때는 "언제 이 상태가 실제로 존재하는가"를
+코드 흐름에서 확인할 것. 머리로 그린 루프와 실제 제어 흐름은 다릅니다.
+</p>
+
+<h3>함정 2: 아껴 놓고 복사로 다 쓰기</h3>
+<p>
+재사용이 작동한 뒤에도 전체 시간이 <b>오히려 늘었습니다</b>. 범인은 복사:
+캐시가 페이지를 보관하려면 호출자에게 내줄 사본이 필요한데, 63페이지를
+통째로 깊은 복사하는 데 ~12ms — 아낀 페이지네이션 비용과 맞먹었습니다.
+</p>
+<figure>
+<svg viewBox="0 0 720 150" role="img" aria-label="깊은 복사와 공유 비교">
+  <text x="10" y="20" font-size="13" font-weight="bold">깊은 복사</text>
+  <rect class="bx" x="10" y="30" width="150" height="40" rx="6"/>
+  <text x="85" y="55" text-anchor="middle" font-size="12">페이지 (수 MB)</text>
+  <rect class="bx" x="230" y="30" width="150" height="40" rx="6"/>
+  <text x="305" y="55" text-anchor="middle" font-size="12">똑같은 사본</text>
+  <path class="ln" d="M160 50 h65" marker-end="url(#ar3)"/>
+  <text x="195" y="42" text-anchor="middle" font-size="11" class="mut">~12ms</text>
+  <text x="420" y="20" font-size="13" font-weight="bold">공유 (Arc)</text>
+  <rect class="hot" x="420" y="30" width="150" height="40" rx="6"/>
+  <text x="495" y="55" text-anchor="middle" font-size="12">페이지 원본 1개</text>
+  <rect class="bx" x="620" y="10" width="90" height="28" rx="6"/>
+  <text x="665" y="29" text-anchor="middle" font-size="11">캐시 →</text>
+  <rect class="bx" x="620" y="46" width="90" height="28" rx="6"/>
+  <text x="665" y="65" text-anchor="middle" font-size="11">결과 →</text>
+  <path class="acc" d="M620 24 c-20 0 -30 10 -50 16"/>
+  <path class="acc" d="M620 60 c-20 0 -30 -5 -50 -10"/>
+  <text x="495" y="95" font-size="11" class="mut" text-anchor="middle">둘 다 같은 원본을 가리킴 — 복사 ~0ms</text>
+  <defs>
+    <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+</svg>
+<figcaption>같은 데이터를 두 곳에서 쓸 때, 복사 대신 참조를 나눠 가질 수 있습니다.</figcaption>
+</figure>
+<p>
+해법은 Rust의 <code>Arc</code>(참조 카운트 공유 포인터): 페이지를 복사하는
+대신 "같은 원본을 가리키는 손잡이"만 나눠 갖습니다. 복사가 0ms가 되는 대신,
+누군가 페이지를 <i>고쳐야</i> 할 때(쪽번호 필드 치환 등)만 그 페이지 하나를
+그때 복사합니다(copy-on-write). 교훈: <b>캐시의 이득은 데이터를 꺼내는
+비용까지 계산해야 진짜 이득</b>입니다. 그리고 성능 작업은 반드시 단계마다
+실측 — "빨라졌겠지"는 두 번 틀렸습니다.
+</p>
+
+</body>
+</html>
