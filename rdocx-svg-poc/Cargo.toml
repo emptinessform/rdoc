@@ -26,8 +26,8 @@ default = ["native"]
 native = ["rdocx/system-fonts"]
 
 [dependencies]
-rdocx = { git = "https://github.com/emptinessform/rdocx", rev = "a1a3549f04c1bb6dd1899e331fca1d227aadc602", default-features = false }
-oxml-layout = { git = "https://github.com/emptinessform/rdocx", rev = "a1a3549f04c1bb6dd1899e331fca1d227aadc602", default-features = false }
+rdocx = { git = "https://github.com/emptinessform/rdocx", rev = "6a0b151312d85b6d427778a09c3f46afe9e93433", default-features = false }
+oxml-layout = { git = "https://github.com/emptinessform/rdocx", rev = "6a0b151312d85b6d427778a09c3f46afe9e93433", default-features = false }
 ttf-parser = "0.25"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
@@ -35,4 +35,5 @@ serde_json = "1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2.126"
+
 
