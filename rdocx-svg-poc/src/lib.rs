@@ -147,6 +147,8 @@ pub struct SvgRenderer<'a> {
     /// (font id, glyph id) -> def index, deduplicated across pages.
     glyph_defs: HashMap<(u32, u16), usize>,
     glyph_paths: Vec<String>,
+    /// Gradient / clip-path / filter definitions (cumulative, ids unique).
+    extra_defs: Vec<String>,
     hits: Vec<HitRun>,
     current_page: usize,
     pub warnings: usize,
@@ -168,6 +170,7 @@ impl<'a> SvgRenderer<'a> {
             faces,
             glyph_defs: HashMap::new(),
             glyph_paths: Vec::new(),
+            extra_defs: Vec::new(),
             hits: Vec::new(),
             current_page: 0,
             warnings: 0,
@@ -207,6 +210,10 @@ impl<'a> SvgRenderer<'a> {
         svg.push_str("<defs>\n");
         for (i, d) in self.glyph_paths.iter().enumerate() {
             let _ = writeln!(svg, r#"<path id="g{i}" d="{d}"/>"#);
+        }
+        for d in &self.extra_defs {
+            svg.push_str(d);
+            svg.push('\n');
         }
         svg.push_str("</defs>\n");
         svg.push_str(&body);
@@ -261,15 +268,41 @@ impl<'a> SvgRenderer<'a> {
                 PositionedElement::Path(pe) => {
                     let d = path_data(&pe.path);
                     let fill = match &pe.fill {
-                        Some(p) => self.paint_color(p),
+                        Some(p) => self.paint_ref(p),
                         None => "none".to_owned(),
                     };
                     let stroke = match &pe.stroke {
-                        Some(s) => format!(
-                            r#" stroke="{}" stroke-width="{}""#,
-                            self.paint_color(&s.paint),
-                            f(s.width)
-                        ),
+                        Some(s) => {
+                            let mut attrs = format!(
+                                r#" stroke="{}" stroke-width="{}""#,
+                                self.paint_ref(&s.paint),
+                                f(s.width)
+                            );
+                            match s.cap {
+                                oxml_layout::LineCap::Butt => {}
+                                oxml_layout::LineCap::Round => {
+                                    attrs.push_str(r#" stroke-linecap="round""#)
+                                }
+                                oxml_layout::LineCap::Square => {
+                                    attrs.push_str(r#" stroke-linecap="square""#)
+                                }
+                            }
+                            match s.join {
+                                oxml_layout::LineJoin::Miter => {}
+                                oxml_layout::LineJoin::Round => {
+                                    attrs.push_str(r#" stroke-linejoin="round""#)
+                                }
+                                oxml_layout::LineJoin::Bevel => {
+                                    attrs.push_str(r#" stroke-linejoin="bevel""#)
+                                }
+                            }
+                            if let Some(dash) = &s.dash {
+                                let list: Vec<String> = dash.iter().map(|v| f(*v)).collect();
+                                let _ =
+                                    write!(attrs, r#" stroke-dasharray="{}""#, list.join(" "));
+                            }
+                            attrs
+                        }
                         None => String::new(),
                     };
                     let rule = match pe.path.fill_rule {
@@ -294,8 +327,37 @@ impl<'a> SvgRenderer<'a> {
                     if g.opacity < 1.0 {
                         let _ = write!(attrs, r#" opacity="{}""#, f(g.opacity));
                     }
-                    if g.clip.is_some() || !g.effects.is_empty() {
-                        self.warnings += 1; // clip paths / effects not implemented in PoC
+                    if let Some(clip) = &g.clip {
+                        let id = self.extra_defs.len();
+                        let rule = match clip.fill_rule {
+                            oxml_layout::FillRule::NonZero => "nonzero",
+                            oxml_layout::FillRule::EvenOdd => "evenodd",
+                        };
+                        self.extra_defs.push(format!(
+                            r#"<clipPath id="p{id}"><path d="{}" clip-rule="{rule}"/></clipPath>"#,
+                            path_data(clip)
+                        ));
+                        let _ = write!(attrs, r#" clip-path="url(#p{id})""#);
+                    }
+                    for effect in &g.effects {
+                        match effect {
+                            oxml_layout::Effect::OuterShadow {
+                                dx,
+                                dy,
+                                blur,
+                                color,
+                            } => {
+                                let id = self.extra_defs.len();
+                                self.extra_defs.push(format!(
+                                    r#"<filter id="p{id}" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="{}" dy="{}" stdDeviation="{}" flood-color="{}" flood-opacity="{}"/></filter>"#,
+                                    f(*dx), f(*dy), f(blur / 2.0), rgb(color), f(color.a)
+                                ));
+                                let _ = write!(attrs, r#" filter="url(#p{id})""#);
+                            }
+                            _ => {
+                                self.warnings += 1;
+                            }
+                        }
                     }
                     let _ = writeln!(out, "<g{attrs}>");
                     self.emit_elements(out, &g.children);
@@ -355,19 +417,72 @@ impl<'a> SvgRenderer<'a> {
         out.push_str("</g>\n");
     }
 
-    fn paint_color(&mut self, paint: &Paint) -> String {
+    /// Paint as an SVG fill/stroke value: a plain color, or a `url(#pN)`
+    /// reference to a gradient definition emitted into `<defs>`.
+    fn paint_ref(&mut self, paint: &Paint) -> String {
         match paint {
             Paint::Solid(c) => rgb(c),
-            // PoC: degrade gradients/tiles to their first stop / gray.
-            Paint::Linear { stops, .. } | Paint::Radial { stops, .. } => {
-                self.warnings += 1;
-                stops.first().map(|s| rgb(&s.color)).unwrap_or_else(|| "gray".into())
+            Paint::Linear {
+                start, end, stops, ..
+            } => {
+                let id = self.extra_defs.len();
+                let mut def = format!(
+                    r#"<linearGradient id="p{id}" gradientUnits="userSpaceOnUse" x1="{}" y1="{}" x2="{}" y2="{}">"#,
+                    f(start.x), f(start.y), f(end.x), f(end.y)
+                );
+                for s in stops {
+                    let _ = write!(
+                        def,
+                        r#"<stop offset="{}" stop-color="{}"{}/>"#,
+                        f(s.offset),
+                        rgb(&s.color),
+                        stop_opacity(&s.color)
+                    );
+                }
+                def.push_str("</linearGradient>");
+                self.extra_defs.push(def);
+                format!("url(#p{id})")
             }
+            Paint::Radial {
+                center,
+                radius,
+                focal,
+                stops,
+                ..
+            } => {
+                let id = self.extra_defs.len();
+                let mut def = format!(
+                    r#"<radialGradient id="p{id}" gradientUnits="userSpaceOnUse" cx="{}" cy="{}" r="{}" fx="{}" fy="{}">"#,
+                    f(center.x), f(center.y), f(*radius), f(focal.x), f(focal.y)
+                );
+                for s in stops {
+                    let _ = write!(
+                        def,
+                        r#"<stop offset="{}" stop-color="{}"{}/>"#,
+                        f(s.offset),
+                        rgb(&s.color),
+                        stop_opacity(&s.color)
+                    );
+                }
+                def.push_str("</radialGradient>");
+                self.extra_defs.push(def);
+                format!("url(#p{id})")
+            }
+            // Tile needs a media registry to resolve the image; explicit
+            // fallback until then.
             Paint::Tile { .. } => {
                 self.warnings += 1;
                 "gray".to_owned()
             }
         }
+    }
+}
+
+fn stop_opacity(c: &Color) -> String {
+    if c.a < 1.0 {
+        format!(r#" stop-opacity="{}""#, f(c.a))
+    } else {
+        String::new()
     }
 }
 

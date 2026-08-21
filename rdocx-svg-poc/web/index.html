@@ -1,24 +1,31 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>rdocx SVG editor PoC (wasm)</title>
+<title>rdoc editor PoC (wasm)</title>
 <style>
   body { font-family: system-ui, sans-serif; background: #4a4f57; margin: 0; }
   header { background: #2b2e33; color: #eee; padding: 10px 20px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; position: sticky; top: 0; z-index: 2; }
   header h1 { font-size: 15px; margin: 0 10px 0 0; font-weight: 600; }
-  button, input[type=file] { font: inherit; }
+  button, input[type=file], select { font: inherit; }
   #status { color: #9fd49f; font-size: 13px; }
   #hint { color: #aaa; font-size: 12px; }
   #pages { display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 24px; }
-  #pages svg { background: #fff; box-shadow: 0 3px 12px rgba(0,0,0,.45); width: 700px; height: auto; cursor: text; }
+  #pages svg { background: #fff; box-shadow: 0 3px 12px rgba(0,0,0,.45); height: auto; cursor: text; user-select: none; }
   .caret { animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
 </style>
 <header>
-  <h1>rdocx SVG editor PoC</h1>
+  <h1>rdoc editor PoC</h1>
   <button id="demo">Load demo</button>
   <label><input type="file" id="file" accept=".docx"></label>
+  <label>zoom <select id="zoom">
+    <option value="0.75">75%</option>
+    <option value="1" selected>100%</option>
+    <option value="1.25">125%</option>
+    <option value="1.5">150%</option>
+    <option value="2">200%</option>
+  </select></label>
   <span id="status">loading wasm…</span>
-  <span id="hint">click text to place the caret, then type / Backspace / ←→</span>
+  <span id="hint">click: caret · drag: select · Ctrl+C: copy · type/Backspace/←→</span>
 </header>
 <div id="pages"></div>
 <script type="module">
@@ -38,10 +45,20 @@
 
   let hits = [];            // HitRun records from the renderer
   let caret = null;         // {para, off} in document coordinates
+  let sel = null;           // {a: {id,k}, b: {id,k}} linear positions, a<=b
   let lastMs = 0;
+  let zoom = 1;
 
   const width = (h) => h.adv.reduce((a, b) => a + b, 0);
   const chars = (s) => [...s];
+  const cum = (h, k) => h.adv.slice(0, k).reduce((a, b) => a + b, 0);
+
+  function applyZoom() {
+    for (const svg of pagesEl.children) {
+      svg.style.width = (svg.viewBox.baseVal.width * zoom * (700 / 612)) + "px";
+    }
+  }
+  document.getElementById("zoom").onchange = (e) => { zoom = +e.target.value; applyZoom(); };
 
   function apply(json, ms) {
     const out = JSON.parse(json);
@@ -49,12 +66,15 @@
     for (const svg of out.pages) pagesEl.insertAdjacentHTML("beforeend", svg);
     hits = out.hits;
     lastMs = ms;
+    sel = null;
+    applyZoom();
     drawCaret();
+    drawSelection();
     report();
   }
 
   function report(extra) {
-    const c = caret ? `caret: para ${caret.para}, offset ${caret.off}` : "no caret";
+    const c = caret ? `caret: para ${caret.para}, offset ${caret.off}` : (sel ? "selection" : "no caret");
     status(`${c} | last op ${lastMs.toFixed(1)} ms${extra ? " | " + extra : ""}`);
   }
 
@@ -67,7 +87,7 @@
       const dy = y < h.y - h.size ? (h.y - h.size) - y : (y > h.y + 0.3 * h.size ? y - (h.y + 0.3 * h.size) : 0);
       const x1 = h.x, x2 = h.x + width(h);
       const dx = x < x1 ? x1 - x : (x > x2 ? x - x2 : 0);
-      const score = dy * 3 + dx;   // favor the right line strongly
+      const score = dy * 3 + dx;
       if (score < bestScore) { bestScore = score; best = h; }
     }
     if (!best) return null;
@@ -84,7 +104,7 @@
       const len = chars(h.text).length;
       if (caret.off >= h.start && caret.off <= h.start + len) {
         best = { hit: h, k: caret.off - h.start };
-        if (caret.off < h.start + len) break;  // prefer segment containing it
+        if (caret.off < h.start + len) break;
       }
     }
     return best;
@@ -97,7 +117,7 @@
     const { hit: h, k } = vis;
     const svg = pagesEl.children[h.page - 1];
     if (!svg) return;
-    const x = h.x + h.adv.slice(0, k).reduce((a, b) => a + b, 0);
+    const x = h.x + cum(h, k);
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     line.setAttribute("x1", x); line.setAttribute("x2", x);
     line.setAttribute("y1", h.y - 0.85 * h.size);
@@ -108,7 +128,104 @@
     svg.appendChild(line);
   }
 
+  // ---- selection -----------------------------------------------------------
+
+  function orderSel(p, q) {
+    return (p.id < q.id || (p.id === q.id && p.k <= q.k)) ? { a: p, b: q } : { a: q, b: p };
+  }
+
+  function drawSelection() {
+    document.querySelectorAll(".selrect").forEach((n) => n.remove());
+    if (!sel) return;
+    for (const h of hits) {
+      if (h.id < sel.a.id || h.id > sel.b.id || h.adv.length === 0) continue;
+      const k1 = h.id === sel.a.id ? sel.a.k : 0;
+      const k2 = h.id === sel.b.id ? sel.b.k : h.adv.length;
+      if (k2 <= k1) continue;
+      const svg = pagesEl.children[h.page - 1];
+      if (!svg) continue;
+      const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      r.setAttribute("x", h.x + cum(h, k1));
+      r.setAttribute("y", h.y - 0.85 * h.size);
+      r.setAttribute("width", cum(h, k2) - cum(h, k1));
+      r.setAttribute("height", 1.1 * h.size);
+      r.setAttribute("fill", "#1a73e8");
+      r.setAttribute("opacity", "0.28");
+      r.setAttribute("class", "selrect");
+      svg.appendChild(r);
+    }
+  }
+
+  function selectedText() {
+    if (!sel) return "";
+    let out = "", prev = null;
+    for (const h of hits) {
+      if (h.id < sel.a.id || h.id > sel.b.id) continue;
+      const cs = chars(h.text);
+      const k1 = h.id === sel.a.id ? sel.a.k : 0;
+      const k2 = h.id === sel.b.id ? sel.b.k : cs.length;
+      if (k2 <= k1) continue;
+      if (prev) {
+        const paraBreak = prev.para !== null && h.para !== null && prev.para !== h.para;
+        const lineBreak = (prev.para === null || h.para === null) &&
+                          (h.page !== prev.page || Math.abs(h.y - prev.y) > 0.5 * h.size);
+        if (paraBreak || lineBreak) out += "\n";
+      }
+      out += cs.slice(k1, k2).join("");
+      prev = h;
+    }
+    return out;
+  }
+
+  let lastCopied = "";
+  async function copySelection() {
+    const text = selectedText();
+    if (!text) return;
+    lastCopied = text;
+    try { await navigator.clipboard.writeText(text); } catch (e) { /* headless */ }
+    report(`copied ${chars(text).length} chars`);
+  }
+
+  // ---- mouse ---------------------------------------------------------------
+
+  function svgPoint(svg, clientX, clientY) {
+    return new DOMPoint(clientX, clientY).matrixTransform(svg.getScreenCTM().inverse());
+  }
+
+  let mouse = null; // {svg, page, start:{x,y}, anchor:{id,k}, dragged}
+  pagesEl.addEventListener("mousedown", (e) => {
+    const svg = e.target.closest("svg");
+    if (!svg) return;
+    const page = [...pagesEl.children].indexOf(svg) + 1;
+    const pt = svgPoint(svg, e.clientX, e.clientY);
+    const found = findHit(page, pt.x, pt.y);
+    mouse = { svg, page, start: { x: e.clientX, y: e.clientY }, anchor: found ? { id: found.hit.id, k: found.k } : null, dragged: false };
+  });
+  pagesEl.addEventListener("mousemove", (e) => {
+    if (!mouse || !mouse.anchor) return;
+    if (!mouse.dragged && Math.hypot(e.clientX - mouse.start.x, e.clientY - mouse.start.y) < 4) return;
+    mouse.dragged = true;
+    const pt = svgPoint(mouse.svg, e.clientX, e.clientY);
+    const found = findHit(mouse.page, pt.x, pt.y);
+    if (!found) return;
+    sel = orderSel(mouse.anchor, { id: found.hit.id, k: found.k });
+    caret = null;
+    drawCaret();
+    drawSelection();
+    report();
+  });
+  window.addEventListener("mouseup", (e) => {
+    if (!mouse) return;
+    if (!mouse.dragged) {
+      const pt = svgPoint(mouse.svg, e.clientX, e.clientY);
+      clickAt(mouse.page, pt.x, pt.y);
+    }
+    mouse = null;
+  });
+
   function clickAt(page, x, y) {
+    sel = null;
+    drawSelection();
     const found = findHit(page, x, y);
     if (!found) return;
     const { hit: h, k } = found;
@@ -122,14 +239,6 @@
     drawCaret();
     report();
   }
-
-  pagesEl.addEventListener("click", (e) => {
-    const svg = e.target.closest("svg");
-    if (!svg) return;
-    const page = [...pagesEl.children].indexOf(svg) + 1;
-    const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
-    clickAt(page, pt.x, pt.y);
-  });
 
   // ---- editing -------------------------------------------------------------
 
@@ -162,6 +271,7 @@
   }
 
   document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") { e.preventDefault(); copySelection(); return; }
     if (!caret || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key.length === 1) { e.preventDefault(); typeText(e.key); }
     else if (e.key === "Backspace") { e.preventDefault(); backspace(); }
@@ -190,6 +300,17 @@
     clickAt,
     type: typeText,
     backspace,
-    state: () => ({ caret, lastMs, mapped: hits.filter(h => h.para !== null).length, total: hits.length }),
+    setZoom: (z) => { zoom = z; applyZoom(); },
+    select: (page, x1, y1, x2, y2) => {
+      const p = findHit(page, x1, y1), q = findHit(page, x2, y2);
+      if (!p || !q) return null;
+      sel = orderSel({ id: p.hit.id, k: p.k }, { id: q.hit.id, k: q.k });
+      caret = null;
+      drawCaret(); drawSelection(); report();
+      return selectedText();
+    },
+    copy: () => { copySelection(); return lastCopied; },
+    selText: selectedText,
+    state: () => ({ caret, sel, lastMs, zoom, mapped: hits.filter(h => h.para !== null).length, total: hits.length }),
   };
 </script>

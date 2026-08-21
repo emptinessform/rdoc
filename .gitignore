@@ -7,3 +7,4 @@ rdocx-svg-poc/web/demo.docx
 rdocx-svg-poc/web/malgun.ttf
 *.pdb
 .gstack/
+rdocx-svg-poc/corpus/*.docx
