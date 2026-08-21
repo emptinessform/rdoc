@@ -420,6 +420,12 @@
       ime.dispatchEvent(new CompositionEvent("compositionend", { data: steps[steps.length - 1] }));
     },
     setZoom: (z) => { zoom = z; applyZoom(); },
+    loadUrl: async (u) => {
+      const b = new Uint8Array(await (await fetch(u)).arrayBuffer());
+      conv.load_docx(b);
+      const t = performance.now();
+      apply(conv.render(), performance.now() - t);
+    },
     select: (page, x1, y1, x2, y2) => {
       const p = findHit(page, x1, y1), q = findHit(page, x2, y2);
       if (!p || !q) return null;
