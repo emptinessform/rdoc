@@ -187,7 +187,7 @@ impl SvgConverter {
         {
             self.redo.push(cur);
         }
-        self.doc = Some(rdocx::Document::from_bytes(&prev).map_err(err)?);
+        self.replace_doc(rdocx::Document::from_bytes(&prev).map_err(err)?);
         self.render()
     }
 
@@ -198,8 +198,19 @@ impl SvgConverter {
         {
             self.undo.push(cur);
         }
-        self.doc = Some(rdocx::Document::from_bytes(&next).map_err(err)?);
+        self.replace_doc(rdocx::Document::from_bytes(&next).map_err(err)?);
         self.render()
+    }
+
+    /// Swap in a restored document, carrying the layout engine (and its
+    /// content-keyed caches) over so undo/redo do not go cache-cold.
+    fn replace_doc(&mut self, new_doc: rdocx::Document) {
+        if let Some(old) = self.doc.as_ref()
+            && let Some(engine) = old.take_layout_engine()
+        {
+            new_doc.set_layout_engine(engine);
+        }
+        self.doc = Some(new_doc);
     }
 
     /// The demo document as .docx bytes, for a download link.
