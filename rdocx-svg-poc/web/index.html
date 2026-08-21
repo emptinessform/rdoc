@@ -1,0 +1,195 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>rdocx SVG editor PoC (wasm)</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #4a4f57; margin: 0; }
+  header { background: #2b2e33; color: #eee; padding: 10px 20px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 15px; margin: 0 10px 0 0; font-weight: 600; }
+  button, input[type=file] { font: inherit; }
+  #status { color: #9fd49f; font-size: 13px; }
+  #hint { color: #aaa; font-size: 12px; }
+  #pages { display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 24px; }
+  #pages svg { background: #fff; box-shadow: 0 3px 12px rgba(0,0,0,.45); width: 700px; height: auto; cursor: text; }
+  .caret { animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+<header>
+  <h1>rdocx SVG editor PoC</h1>
+  <button id="demo">Load demo</button>
+  <label><input type="file" id="file" accept=".docx"></label>
+  <span id="status">loading wasm…</span>
+  <span id="hint">click text to place the caret, then type / Backspace / ←→</span>
+</header>
+<div id="pages"></div>
+<script type="module">
+  import init, { SvgConverter } from "./pkg/rdocx_svg_poc.js";
+
+  const statusEl = document.getElementById("status");
+  const pagesEl = document.getElementById("pages");
+  const status = (m) => statusEl.textContent = m;
+
+  await init();
+  const conv = new SvgConverter();
+  try {
+    const buf = await (await fetch("./malgun.ttf")).arrayBuffer();
+    conv.add_font("Malgun Gothic", new Uint8Array(buf));
+  } catch (e) { /* Korean falls back to bundled fonts */ }
+  status("ready — load the demo or open a .docx");
+
+  let hits = [];            // HitRun records from the renderer
+  let caret = null;         // {para, off} in document coordinates
+  let lastMs = 0;
+
+  const width = (h) => h.adv.reduce((a, b) => a + b, 0);
+  const chars = (s) => [...s];
+
+  function apply(json, ms) {
+    const out = JSON.parse(json);
+    pagesEl.innerHTML = "";
+    for (const svg of out.pages) pagesEl.insertAdjacentHTML("beforeend", svg);
+    hits = out.hits;
+    lastMs = ms;
+    drawCaret();
+    report();
+  }
+
+  function report(extra) {
+    const c = caret ? `caret: para ${caret.para}, offset ${caret.off}` : "no caret";
+    status(`${c} | last op ${lastMs.toFixed(1)} ms${extra ? " | " + extra : ""}`);
+  }
+
+  // ---- hit testing ---------------------------------------------------------
+
+  function findHit(page, x, y) {
+    let best = null, bestScore = Infinity;
+    for (const h of hits) {
+      if (h.page !== page || h.adv.length === 0) continue;
+      const dy = y < h.y - h.size ? (h.y - h.size) - y : (y > h.y + 0.3 * h.size ? y - (h.y + 0.3 * h.size) : 0);
+      const x1 = h.x, x2 = h.x + width(h);
+      const dx = x < x1 ? x1 - x : (x > x2 ? x - x2 : 0);
+      const score = dy * 3 + dx;   // favor the right line strongly
+      if (score < bestScore) { bestScore = score; best = h; }
+    }
+    if (!best) return null;
+    let k = 0, cx = best.x;
+    for (const a of best.adv) { if (x < cx + a / 2) break; cx += a; k++; }
+    return { hit: best, k };
+  }
+
+  function caretVis() {
+    if (!caret) return null;
+    let best = null;
+    for (const h of hits) {
+      if (h.para !== caret.para || h.start === null) continue;
+      const len = chars(h.text).length;
+      if (caret.off >= h.start && caret.off <= h.start + len) {
+        best = { hit: h, k: caret.off - h.start };
+        if (caret.off < h.start + len) break;  // prefer segment containing it
+      }
+    }
+    return best;
+  }
+
+  function drawCaret() {
+    document.querySelectorAll(".caret").forEach((n) => n.remove());
+    const vis = caretVis();
+    if (!vis) return;
+    const { hit: h, k } = vis;
+    const svg = pagesEl.children[h.page - 1];
+    if (!svg) return;
+    const x = h.x + h.adv.slice(0, k).reduce((a, b) => a + b, 0);
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", x); line.setAttribute("x2", x);
+    line.setAttribute("y1", h.y - 0.85 * h.size);
+    line.setAttribute("y2", h.y + 0.25 * h.size);
+    line.setAttribute("stroke", "#1a73e8");
+    line.setAttribute("stroke-width", "0.8");
+    line.setAttribute("class", "caret");
+    svg.appendChild(line);
+  }
+
+  function clickAt(page, x, y) {
+    const found = findHit(page, x, y);
+    if (!found) return;
+    const { hit: h, k } = found;
+    if (h.para === null) {
+      caret = null;
+      drawCaret();
+      report(`segment ${JSON.stringify(h.text)} has no document mapping (needs upstream provenance)`);
+      return;
+    }
+    caret = { para: h.para, off: h.start + k };
+    drawCaret();
+    report();
+  }
+
+  pagesEl.addEventListener("click", (e) => {
+    const svg = e.target.closest("svg");
+    if (!svg) return;
+    const page = [...pagesEl.children].indexOf(svg) + 1;
+    const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
+    clickAt(page, pt.x, pt.y);
+  });
+
+  // ---- editing -------------------------------------------------------------
+
+  function edit(fn) {
+    const t = performance.now();
+    try {
+      const json = fn();
+      apply(json, performance.now() - t);
+    } catch (err) {
+      report(`error: ${err}`);
+    }
+  }
+
+  function typeText(s) {
+    if (!caret) return;
+    edit(() => {
+      const json = conv.insert(caret.para, caret.off, s);
+      caret.off += chars(s).length;
+      return json;
+    });
+  }
+
+  function backspace() {
+    if (!caret || caret.off === 0) return;
+    edit(() => {
+      const json = conv.delete(caret.para, caret.off);
+      caret.off -= 1;
+      return json;
+    });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (!caret || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key.length === 1) { e.preventDefault(); typeText(e.key); }
+    else if (e.key === "Backspace") { e.preventDefault(); backspace(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); caret.off = Math.max(0, caret.off - 1); drawCaret(); report(); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); caret.off += 1; drawCaret(); report(); }
+  });
+
+  // ---- load ----------------------------------------------------------------
+
+  document.getElementById("demo").onclick = () => {
+    conv.load_demo();
+    const t = performance.now();
+    apply(conv.render(), performance.now() - t);
+  };
+
+  document.getElementById("file").onchange = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    conv.load_docx(new Uint8Array(await f.arrayBuffer()));
+    const t = performance.now();
+    apply(conv.render(), performance.now() - t);
+  };
+
+  // Deterministic hooks for automated testing.
+  window.__t = {
+    clickAt,
+    type: typeText,
+    backspace,
+    state: () => ({ caret, lastMs, mapped: hits.filter(h => h.para !== null).length, total: hits.length }),
+  };
+</script>

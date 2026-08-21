@@ -1,0 +1,9 @@
+target/
+rdocx-svg-poc/out/
+rdocx-svg-poc/web/pkg/
+rdocx-svg-poc/web/*.png
+rdocx-svg-poc/web/demo.docx
+# Proprietary font — copy locally, never commit (see README)
+rdocx-svg-poc/web/malgun.ttf
+*.pdb
+.gstack/

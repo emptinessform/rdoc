@@ -1,0 +1,37 @@
+[package]
+name = "rdocx-svg-poc"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# PoC: SVG rendering backend on top of rdocx's layout output.
+# Depends on a fork of https://github.com/tensorbee/rdocx carrying two
+# patches: public `Document::layout()` and `Document::layout_with_fonts()`
+# accessors exposing the full LayoutResult (positioned pages + font bytes).
+# Proposed upstream: https://github.com/tensorbee/rdocx/issues/37
+#
+# Native build (system fonts):  cargo run --release
+# Wasm build (caller-supplied fonts):
+#   wasm-pack build --release --target web --out-dir web/pkg -- --no-default-features
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "poc"
+path = "src/main.rs"
+
+[features]
+default = ["native"]
+native = ["rdocx/system-fonts"]
+
+[dependencies]
+rdocx = { git = "https://github.com/emptinessform/rdocx", rev = "0435e860a0dc11a8ad7c96461bb8260252da1cb8", default-features = false }
+oxml-layout = { git = "https://github.com/emptinessform/rdocx", rev = "0435e860a0dc11a8ad7c96461bb8260252da1cb8", default-features = false }
+ttf-parser = "0.25"
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2.126"
