@@ -147,10 +147,15 @@ pub struct SvgRenderer<'a> {
     /// (font id, glyph id) -> def index, deduplicated across pages.
     glyph_defs: HashMap<(u32, u16), usize>,
     glyph_paths: Vec<String>,
-    /// Gradient / clip-path / filter definitions (cumulative, ids unique).
+    /// Gradient / clip-path / filter definitions (per page).
     extra_defs: Vec<String>,
     hits: Vec<HitRun>,
     current_page: usize,
+    /// Index into `hits` where the current page's runs start; HitRun.id is
+    /// page-local so partial page updates cannot collide.
+    page_first_hit: usize,
+    /// Id prefix (e.g. "pg3-") so every page's defs are unique in one DOM.
+    prefix: String,
     pub warnings: usize,
 }
 
@@ -173,6 +178,8 @@ impl<'a> SvgRenderer<'a> {
             extra_defs: Vec::new(),
             hits: Vec::new(),
             current_page: 0,
+            page_first_hit: 0,
+            prefix: String::new(),
             warnings: 0,
         }
     }
@@ -182,8 +189,16 @@ impl<'a> SvgRenderer<'a> {
         std::mem::take(&mut self.hits)
     }
 
+    /// Render one page as a standalone SVG. Definitions (glyphs, gradients,
+    /// clips) are per page and prefixed with "pg{N}-" so multiple pages can
+    /// share one DOM without id collisions.
     pub fn render_page(&mut self, page: &oxml_layout::PageFrame) -> String {
         self.current_page = page.page_number;
+        self.page_first_hit = self.hits.len();
+        self.prefix = format!("pg{}-", page.page_number);
+        self.glyph_defs.clear();
+        self.glyph_paths.clear();
+        self.extra_defs.clear();
         let mut body = String::new();
         let bg = match &page.background {
             Some(Paint::Solid(c)) => rgb(c),
@@ -209,7 +224,7 @@ impl<'a> SvgRenderer<'a> {
         );
         svg.push_str("<defs>\n");
         for (i, d) in self.glyph_paths.iter().enumerate() {
-            let _ = writeln!(svg, r#"<path id="g{i}" d="{d}"/>"#);
+            let _ = writeln!(svg, r#"<path id="{}g{i}" d="{d}"/>"#, self.prefix);
         }
         for d in &self.extra_defs {
             svg.push_str(d);
@@ -334,10 +349,10 @@ impl<'a> SvgRenderer<'a> {
                             oxml_layout::FillRule::EvenOdd => "evenodd",
                         };
                         self.extra_defs.push(format!(
-                            r#"<clipPath id="p{id}"><path d="{}" clip-rule="{rule}"/></clipPath>"#,
-                            path_data(clip)
+                            r#"<clipPath id="{}p{id}"><path d="{}" clip-rule="{rule}"/></clipPath>"#,
+                            self.prefix, path_data(clip)
                         ));
-                        let _ = write!(attrs, r#" clip-path="url(#p{id})""#);
+                        let _ = write!(attrs, r#" clip-path="url(#{}p{id})""#, self.prefix);
                     }
                     for effect in &g.effects {
                         match effect {
@@ -349,10 +364,10 @@ impl<'a> SvgRenderer<'a> {
                             } => {
                                 let id = self.extra_defs.len();
                                 self.extra_defs.push(format!(
-                                    r#"<filter id="p{id}" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="{}" dy="{}" stdDeviation="{}" flood-color="{}" flood-opacity="{}"/></filter>"#,
-                                    f(*dx), f(*dy), f(blur / 2.0), rgb(color), f(color.a)
+                                    r#"<filter id="{}p{id}" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="{}" dy="{}" stdDeviation="{}" flood-color="{}" flood-opacity="{}"/></filter>"#,
+                                    self.prefix, f(*dx), f(*dy), f(blur / 2.0), rgb(color), f(color.a)
                                 ));
-                                let _ = write!(attrs, r#" filter="url(#p{id})""#);
+                                let _ = write!(attrs, r#" filter="url(#{}p{id})""#, self.prefix);
                             }
                             _ => {
                                 self.warnings += 1;
@@ -370,12 +385,8 @@ impl<'a> SvgRenderer<'a> {
         }
     }
 
-    fn emit_glyph_run(&mut self, out: &mut String, run: &GlyphRun) {
-        let Some(info) = self.faces.get(&run.font_id.0) else {
-            self.warnings += 1;
-            return;
-        };
-        let hit_id = self.hits.len();
+    fn push_hit(&mut self, run: &GlyphRun) -> usize {
+        let hit_id = self.hits.len() - self.page_first_hit;
         self.hits.push(HitRun {
             id: hit_id,
             page: self.current_page,
@@ -387,10 +398,41 @@ impl<'a> SvgRenderer<'a> {
             para: None,
             start: None,
         });
+        hit_id
+    }
+
+    /// Collect hit records for a page without generating any SVG — the cheap
+    /// pass that runs for every page on every edit, while SVG generation runs
+    /// only for pages whose content hash changed.
+    pub fn collect_hits(&mut self, page: &oxml_layout::PageFrame) {
+        self.current_page = page.page_number;
+        self.page_first_hit = self.hits.len();
+        fn walk(r: &mut SvgRenderer, elements: &[PositionedElement]) {
+            for el in elements {
+                match el {
+                    PositionedElement::Text(run) => {
+                        r.push_hit(run);
+                    }
+                    PositionedElement::Group(g) => walk(r, &g.children),
+                    _ => {}
+                }
+            }
+        }
+        walk(self, &page.elements);
+    }
+
+    fn emit_glyph_run(&mut self, out: &mut String, run: &GlyphRun) {
+        let _hit_id = self.push_hit(run);
+        let hit_id = _hit_id;
+        let Some(info) = self.faces.get(&run.font_id.0) else {
+            self.warnings += 1;
+            return;
+        };
         let scale = run.font_size / info.units_per_em;
         let _ = writeln!(
             out,
-            r#"<g data-hit="{hit_id}" fill="{}"{}>"#,
+            r#"<g data-hit="{}{hit_id}" fill="{}"{}>"#,
+            self.prefix,
             rgb(&run.color),
             opacity_attr("fill-opacity", &run.color)
         );
@@ -405,7 +447,8 @@ impl<'a> SvgRenderer<'a> {
             ) {
                 let _ = writeln!(
                     out,
-                    r##"<use href="#g{def}" transform="translate({} {}) scale({} {})"/>"##,
+                    r##"<use href="#{}g{def}" transform="translate({} {}) scale({} {})"/>"##,
+                    self.prefix,
                     f(pen_x),
                     f(run.origin.y),
                     fs(scale),
@@ -427,8 +470,8 @@ impl<'a> SvgRenderer<'a> {
             } => {
                 let id = self.extra_defs.len();
                 let mut def = format!(
-                    r#"<linearGradient id="p{id}" gradientUnits="userSpaceOnUse" x1="{}" y1="{}" x2="{}" y2="{}">"#,
-                    f(start.x), f(start.y), f(end.x), f(end.y)
+                    r#"<linearGradient id="{}p{id}" gradientUnits="userSpaceOnUse" x1="{}" y1="{}" x2="{}" y2="{}">"#,
+                    self.prefix, f(start.x), f(start.y), f(end.x), f(end.y)
                 );
                 for s in stops {
                     let _ = write!(
@@ -441,7 +484,7 @@ impl<'a> SvgRenderer<'a> {
                 }
                 def.push_str("</linearGradient>");
                 self.extra_defs.push(def);
-                format!("url(#p{id})")
+                format!("url(#{}p{id})", self.prefix)
             }
             Paint::Radial {
                 center,
@@ -452,8 +495,8 @@ impl<'a> SvgRenderer<'a> {
             } => {
                 let id = self.extra_defs.len();
                 let mut def = format!(
-                    r#"<radialGradient id="p{id}" gradientUnits="userSpaceOnUse" cx="{}" cy="{}" r="{}" fx="{}" fy="{}">"#,
-                    f(center.x), f(center.y), f(*radius), f(focal.x), f(focal.y)
+                    r#"<radialGradient id="{}p{id}" gradientUnits="userSpaceOnUse" cx="{}" cy="{}" r="{}" fx="{}" fy="{}">"#,
+                    self.prefix, f(center.x), f(center.y), f(*radius), f(focal.x), f(focal.y)
                 );
                 for s in stops {
                     let _ = write!(
@@ -466,7 +509,7 @@ impl<'a> SvgRenderer<'a> {
                 }
                 def.push_str("</radialGradient>");
                 self.extra_defs.push(def);
-                format!("url(#p{id})")
+                format!("url(#{}p{id})", self.prefix)
             }
             // Tile needs a media registry to resolve the image; explicit
             // fallback until then.
@@ -747,6 +790,197 @@ pub fn render_with_hits(doc: &Document, layout: &LayoutResult) -> (Vec<String>, 
     let mut hits = renderer.take_hits();
     map_hits_to_doc(doc, &mut hits);
     (svgs, hits)
+}
+
+/// Per-page fingerprints from the previous render, for delta updates.
+#[derive(Default)]
+pub struct RenderCache {
+    element_hashes: Vec<u64>,
+    hit_hashes: Vec<u64>,
+}
+
+impl RenderCache {
+    pub fn clear(&mut self) {
+        self.element_hashes.clear();
+        self.hit_hashes.clear();
+    }
+}
+
+/// Pages and hit runs that changed since the cache was last updated.
+pub struct RenderDelta {
+    pub total_pages: usize,
+    /// (0-based page index, svg) for pages whose content changed.
+    pub pages: Vec<(usize, String)>,
+    /// (0-based page index, runs) for pages whose hit map changed — a
+    /// superset of `pages` when paragraph indices shift without reflow.
+    pub hits: Vec<(usize, Vec<HitRun>)>,
+}
+
+struct Fnv(u64);
+
+impl Fnv {
+    fn new() -> Self {
+        Fnv(0xcbf2_9ce4_8422_2325)
+    }
+    fn bytes(&mut self, bytes: &[u8]) {
+        for b in bytes {
+            self.0 ^= u64::from(*b);
+            self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    fn f64(&mut self, v: f64) {
+        self.bytes(&v.to_bits().to_le_bytes());
+    }
+}
+
+fn fnv(bytes: &[u8]) -> u64 {
+    let mut h = Fnv::new();
+    h.bytes(bytes);
+    h.0
+}
+
+/// Structural hash of a page's positioned elements — cheap relative to SVG
+/// string generation, so unchanged pages skip that step entirely.
+fn hash_elements(elements: &[PositionedElement], h: &mut Fnv) {
+    for el in elements {
+        match el {
+            PositionedElement::Text(r) => {
+                h.bytes(b"t");
+                h.f64(r.origin.x);
+                h.f64(r.origin.y);
+                h.f64(r.font_size);
+                h.bytes(&r.font_id.0.to_le_bytes());
+                h.bytes(r.text.as_bytes());
+                for g in &r.glyph_ids {
+                    h.bytes(&g.to_le_bytes());
+                }
+                h.f64(r.color.r);
+                h.f64(r.color.g);
+                h.f64(r.color.b);
+            }
+            PositionedElement::Line {
+                start,
+                end,
+                width,
+                color,
+                ..
+            } => {
+                h.bytes(b"l");
+                h.f64(start.x);
+                h.f64(start.y);
+                h.f64(end.x);
+                h.f64(end.y);
+                h.f64(*width);
+                h.f64(color.r);
+            }
+            PositionedElement::FilledRect { rect, color } => {
+                h.bytes(b"r");
+                h.f64(rect.x);
+                h.f64(rect.y);
+                h.f64(rect.width);
+                h.f64(rect.height);
+                h.f64(color.r);
+                h.f64(color.g);
+                h.f64(color.b);
+            }
+            PositionedElement::Image { rect, media_id, .. } => {
+                h.bytes(b"i");
+                h.f64(rect.x);
+                h.f64(rect.y);
+                h.f64(rect.width);
+                h.f64(rect.height);
+                h.bytes(&media_id.0.to_le_bytes());
+            }
+            PositionedElement::LinkAnnotation { rect, url } => {
+                h.bytes(b"a");
+                h.f64(rect.x);
+                h.f64(rect.y);
+                h.bytes(url.as_bytes());
+            }
+            PositionedElement::Path(pe) => {
+                h.bytes(b"p");
+                for cmd in &pe.path.commands {
+                    match cmd {
+                        PathCommand::MoveTo(p) | PathCommand::LineTo(p) => {
+                            h.f64(p.x);
+                            h.f64(p.y);
+                        }
+                        PathCommand::CurveTo { c1, to, .. } => {
+                            h.f64(c1.x);
+                            h.f64(to.x);
+                            h.f64(to.y);
+                        }
+                        PathCommand::Close => h.bytes(b"z"),
+                    }
+                }
+            }
+            PositionedElement::Group(g) => {
+                h.bytes(b"g");
+                h.f64(g.transform.e);
+                h.f64(g.transform.f);
+                h.f64(g.opacity);
+                hash_elements(&g.children, h);
+            }
+            _ => h.bytes(b"?"),
+        }
+    }
+}
+
+/// Render only what changed relative to `cache`. Hit maps are recollected
+/// for every page (cheap, and paragraph indices can shift without reflow),
+/// but SVG strings are generated only for pages whose element hash changed
+/// — the editor path: a keystroke reflows one page and leaves the other
+/// pages' SVG generation, transfer, and DOM untouched.
+pub fn render_delta(doc: &Document, layout: &LayoutResult, cache: &mut RenderCache) -> RenderDelta {
+    let n = layout.pages.len();
+    let mut renderer = SvgRenderer::new(&layout.fonts);
+
+    // Pass 1: hits for every page, no SVG.
+    for page in &layout.pages {
+        renderer.collect_hits(page);
+    }
+    let mut hits = renderer.take_hits();
+    map_hits_to_doc(doc, &mut hits);
+    let mut by_page: Vec<Vec<HitRun>> = vec![Vec::new(); n];
+    for h in hits {
+        let p = h.page - 1;
+        if p < by_page.len() {
+            by_page[p].push(h);
+        }
+    }
+
+    // Pass 2: SVG only for structurally changed pages.
+    cache.element_hashes.resize(n, 0);
+    cache.hit_hashes.resize(n, 0);
+    let mut delta = RenderDelta {
+        total_pages: n,
+        pages: Vec::new(),
+        hits: Vec::new(),
+    };
+    for (i, page) in layout.pages.iter().enumerate() {
+        let mut h = Fnv::new();
+        h.f64(page.width);
+        h.f64(page.height);
+        hash_elements(&page.elements, &mut h);
+        if cache.element_hashes[i] != h.0 {
+            cache.element_hashes[i] = h.0;
+            delta.pages.push((i, renderer.render_page(page)));
+        }
+    }
+    let _ = renderer.take_hits(); // pass-2 duplicates; already collected
+
+    for (i, runs) in by_page.into_iter().enumerate() {
+        let mut buf = String::new();
+        for r in &runs {
+            let _ = write!(buf, "{}|{}|{}|{:?}|{:?};", r.text, r.x, r.y, r.para, r.start);
+        }
+        let h = fnv(buf.as_bytes());
+        if cache.hit_hashes[i] != h {
+            cache.hit_hashes[i] = h;
+            delta.hits.push((i, runs));
+        }
+    }
+    delta
 }
 
 /// Greedy sequential matching of rendered run segments back to body

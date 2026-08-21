@@ -44,15 +44,21 @@
   } catch (e) { /* Korean falls back to bundled fonts */ }
   status("ready — load the demo or open a .docx");
 
-  let hits = [];            // HitRun records from the renderer
+  // ---- state ---------------------------------------------------------------
+
+  let pageHits = [];        // pageHits[pageIndex] = [HitRun...] (ids page-local)
   let caret = null;         // {para, off} in document coordinates
-  let sel = null;           // {a: {id,k}, b: {id,k}} linear positions, a<=b
+  let sel = null;           // {a, b} where each is {page, idx, k}; a <= b
   let lastMs = 0;
+  let lastDelta = "";
   let zoom = 1;
 
-  const width = (h) => h.adv.reduce((a, b) => a + b, 0);
   const chars = (s) => [...s];
+  const width = (h) => h.adv.reduce((a, b) => a + b, 0);
   const cum = (h, k) => h.adv.slice(0, k).reduce((a, b) => a + b, 0);
+  const allHits = () => pageHits.flat();
+  const getRun = (ref) => (pageHits[ref.page - 1] || [])[ref.idx];
+  const cmpPos = (p, q) => (p.page - q.page) || (p.idx - q.idx) || ((p.k ?? 0) - (q.k ?? 0));
 
   function applyZoom() {
     for (const svg of pagesEl.children) {
@@ -63,10 +69,16 @@
 
   function apply(json, ms) {
     const out = JSON.parse(json);
-    pagesEl.innerHTML = "";
-    for (const svg of out.pages) pagesEl.insertAdjacentHTML("beforeend", svg);
-    hits = out.hits;
+    while (pagesEl.children.length > out.total) pagesEl.lastChild.remove();
+    for (const [i, svg] of out.pages) {
+      const cur = pagesEl.children[i];
+      if (cur) cur.outerHTML = svg;
+      else pagesEl.insertAdjacentHTML("beforeend", svg);
+    }
+    for (const [i, runs] of out.hits) pageHits[i] = runs;
+    pageHits.length = out.total;
     lastMs = ms;
+    lastDelta = `${out.pages.length}/${out.total} pages redrawn`;
     sel = null;
     applyZoom();
     drawCaret();
@@ -76,15 +88,15 @@
 
   function report(extra) {
     const c = caret ? `caret: para ${caret.para}, offset ${caret.off}` : (sel ? "selection" : "no caret");
-    status(`${c} | last op ${lastMs.toFixed(1)} ms${extra ? " | " + extra : ""}`);
+    status(`${c} | last op ${lastMs.toFixed(1)} ms (${lastDelta})${extra ? " | " + extra : ""}`);
   }
 
   // ---- hit testing ---------------------------------------------------------
 
   function findHit(page, x, y) {
     let best = null, bestScore = Infinity;
-    for (const h of hits) {
-      if (h.page !== page || h.adv.length === 0) continue;
+    for (const h of pageHits[page - 1] || []) {
+      if (h.adv.length === 0) continue;
       const dy = y < h.y - h.size ? (h.y - h.size) - y : (y > h.y + 0.3 * h.size ? y - (h.y + 0.3 * h.size) : 0);
       const x1 = h.x, x2 = h.x + width(h);
       const dx = x < x1 ? x1 - x : (x > x2 ? x - x2 : 0);
@@ -100,7 +112,7 @@
   function caretVis() {
     if (!caret) return null;
     let best = null;
-    for (const h of hits) {
+    for (const h of allHits()) {
       if (h.para !== caret.para || h.start === null) continue;
       const len = chars(h.text).length;
       if (caret.off >= h.start && caret.off <= h.start + len) {
@@ -132,16 +144,19 @@
   // ---- selection -----------------------------------------------------------
 
   function orderSel(p, q) {
-    return (p.id < q.id || (p.id === q.id && p.k <= q.k)) ? { a: p, b: q } : { a: q, b: p };
+    return cmpPos(p, q) <= 0 ? { a: p, b: q } : { a: q, b: p };
   }
 
   function drawSelection() {
     document.querySelectorAll(".selrect").forEach((n) => n.remove());
     if (!sel) return;
-    for (const h of hits) {
-      if (h.id < sel.a.id || h.id > sel.b.id || h.adv.length === 0) continue;
-      const k1 = h.id === sel.a.id ? sel.a.k : 0;
-      const k2 = h.id === sel.b.id ? sel.b.k : h.adv.length;
+    for (const h of allHits()) {
+      const ref = { page: h.page, idx: h.id };
+      if (cmpPos({ ...ref, k: h.adv.length }, sel.a) < 0 || cmpPos({ ...ref, k: 0 }, sel.b) > 0) continue;
+      const sameA = h.page === sel.a.page && h.id === sel.a.idx;
+      const sameB = h.page === sel.b.page && h.id === sel.b.idx;
+      const k1 = sameA ? sel.a.k : 0;
+      const k2 = sameB ? sel.b.k : h.adv.length;
       if (k2 <= k1) continue;
       const svg = pagesEl.children[h.page - 1];
       if (!svg) continue;
@@ -160,11 +175,14 @@
   function selectedText() {
     if (!sel) return "";
     let out = "", prev = null;
-    for (const h of hits) {
-      if (h.id < sel.a.id || h.id > sel.b.id) continue;
+    for (const h of allHits()) {
+      const ref = { page: h.page, idx: h.id };
       const cs = chars(h.text);
-      const k1 = h.id === sel.a.id ? sel.a.k : 0;
-      const k2 = h.id === sel.b.id ? sel.b.k : cs.length;
+      if (cmpPos({ ...ref, k: cs.length }, sel.a) < 0 || cmpPos({ ...ref, k: 0 }, sel.b) > 0) continue;
+      const sameA = h.page === sel.a.page && h.id === sel.a.idx;
+      const sameB = h.page === sel.b.page && h.id === sel.b.idx;
+      const k1 = sameA ? sel.a.k : 0;
+      const k2 = sameB ? sel.b.k : cs.length;
       if (k2 <= k1) continue;
       if (prev) {
         const paraBreak = prev.para !== null && h.para !== null && prev.para !== h.para;
@@ -193,23 +211,30 @@
     return new DOMPoint(clientX, clientY).matrixTransform(svg.getScreenCTM().inverse());
   }
 
-  let mouse = null; // {svg, page, start:{x,y}, anchor:{id,k}, dragged}
+  let mouse = null;
   pagesEl.addEventListener("mousedown", (e) => {
     const svg = e.target.closest("svg");
     if (!svg) return;
     const page = [...pagesEl.children].indexOf(svg) + 1;
     const pt = svgPoint(svg, e.clientX, e.clientY);
     const found = findHit(page, pt.x, pt.y);
-    mouse = { svg, page, start: { x: e.clientX, y: e.clientY }, anchor: found ? { id: found.hit.id, k: found.k } : null, dragged: false };
+    mouse = {
+      svg, page,
+      start: { x: e.clientX, y: e.clientY },
+      anchor: found ? { page: found.hit.page, idx: found.hit.id, k: found.k } : null,
+      dragged: false,
+    };
   });
   pagesEl.addEventListener("mousemove", (e) => {
     if (!mouse || !mouse.anchor) return;
     if (!mouse.dragged && Math.hypot(e.clientX - mouse.start.x, e.clientY - mouse.start.y) < 4) return;
     mouse.dragged = true;
-    const pt = svgPoint(mouse.svg, e.clientX, e.clientY);
-    const found = findHit(mouse.page, pt.x, pt.y);
+    const svg = e.target.closest("svg") || mouse.svg;
+    const page = [...pagesEl.children].indexOf(svg) + 1;
+    const pt = svgPoint(svg, e.clientX, e.clientY);
+    const found = findHit(page, pt.x, pt.y);
     if (!found) return;
-    sel = orderSel(mouse.anchor, { id: found.hit.id, k: found.k });
+    sel = orderSel(mouse.anchor, { page: found.hit.page, idx: found.hit.id, k: found.k });
     caret = null;
     drawCaret();
     drawSelection();
@@ -248,7 +273,7 @@
   /// endpoint has no provenance mapping.
   function selRange() {
     if (!sel) return null;
-    const A = hits[sel.a.id], B = hits[sel.b.id];
+    const A = getRun(sel.a), B = getRun(sel.b);
     if (!A || !B || A.para === null || B.para === null) return null;
     let pa = A.para, oa = A.start + sel.a.k, pb = B.para, ob = B.start + sel.b.k;
     if (pb < pa || (pa === pb && ob < oa)) [pa, oa, pb, ob] = [pb, ob, pa, oa];
@@ -331,7 +356,7 @@
     if (r.pa !== r.pb) { report("format toggle: same-paragraph selections only for now"); return; }
     edit(() => {
       const json = conv.toggle(r.pa, r.oa, r.ob, f);
-      sel = null;                       // hit segmentation changes; refs are stale
+      sel = null;
       caret = { para: r.pa, off: r.ob };
       return json;
     });
@@ -341,7 +366,7 @@
   function doRedo() { edit(() => { const j = conv.redo(); caret = null; sel = null; return j; }); }
 
   document.addEventListener("keydown", (e) => {
-    if (e.isComposing) return;          // IME owns these keys
+    if (e.isComposing) return;
     const ctrl = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
     if (ctrl && key === "c") { e.preventDefault(); copySelection(); return; }
@@ -368,7 +393,7 @@
   // ---- IME composition (Korean etc.) --------------------------------------
 
   const ime = document.getElementById("ime");
-  let comp = null; // {base, len}: active composition span at the caret
+  let comp = null;
 
   function applyComp(data) {
     if (!comp || !caret) return;
@@ -419,6 +444,19 @@
         ime.dispatchEvent(new CompositionEvent("compositionupdate", { data: s }));
       ime.dispatchEvent(new CompositionEvent("compositionend", { data: steps[steps.length - 1] }));
     },
+    select: (page, x1, y1, x2, y2) => {
+      const p = findHit(page, x1, y1), q = findHit(page, x2, y2);
+      if (!p || !q) return null;
+      sel = orderSel(
+        { page: p.hit.page, idx: p.hit.id, k: p.k },
+        { page: q.hit.page, idx: q.hit.id, k: q.k },
+      );
+      caret = null;
+      drawCaret(); drawSelection(); report();
+      return selectedText();
+    },
+    copy: () => { copySelection(); return lastCopied; },
+    selText: selectedText,
     setZoom: (z) => { zoom = z; applyZoom(); },
     loadUrl: async (u) => {
       const b = new Uint8Array(await (await fetch(u)).arrayBuffer());
@@ -426,16 +464,10 @@
       const t = performance.now();
       apply(conv.render(), performance.now() - t);
     },
-    select: (page, x1, y1, x2, y2) => {
-      const p = findHit(page, x1, y1), q = findHit(page, x2, y2);
-      if (!p || !q) return null;
-      sel = orderSel({ id: p.hit.id, k: p.k }, { id: q.hit.id, k: q.k });
-      caret = null;
-      drawCaret(); drawSelection(); report();
-      return selectedText();
-    },
-    copy: () => { copySelection(); return lastCopied; },
-    selText: selectedText,
-    state: () => ({ caret, sel, lastMs, zoom, mapped: hits.filter(h => h.para !== null).length, total: hits.length }),
+    state: () => ({
+      caret, sel, lastMs, lastDelta, zoom,
+      mapped: allHits().filter(h => h.para !== null).length,
+      total: allHits().length,
+    }),
   };
 </script>

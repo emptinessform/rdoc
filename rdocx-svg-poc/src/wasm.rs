@@ -9,8 +9,8 @@
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    HitRun, delete_char_before, delete_range, insert_at, render_with_hits, split_paragraph,
-    toggle_format,
+    HitRun, RenderCache, delete_char_before, delete_range, insert_at, render_delta,
+    split_paragraph, toggle_format,
 };
 
 const UNDO_CAP: usize = 100;
@@ -24,12 +24,14 @@ pub struct SvgConverter {
     /// heavy on large documents.
     undo: Vec<Vec<u8>>,
     redo: Vec<Vec<u8>>,
+    cache: RenderCache,
 }
 
 #[derive(serde::Serialize)]
-struct RenderOut<'a> {
-    pages: &'a [String],
-    hits: &'a [HitRun],
+struct RenderOut {
+    total: usize,
+    pages: Vec<(usize, String)>,
+    hits: Vec<(usize, Vec<HitRun>)>,
     can_undo: bool,
     can_redo: bool,
 }
@@ -43,6 +45,7 @@ impl SvgConverter {
             doc: None,
             undo: Vec::new(),
             redo: Vec::new(),
+            cache: RenderCache::default(),
         }
     }
 
@@ -56,6 +59,7 @@ impl SvgConverter {
         self.doc = Some(rdocx::Document::from_bytes(docx).map_err(err)?);
         self.undo.clear();
         self.redo.clear();
+        self.cache.clear();
         Ok(())
     }
 
@@ -64,11 +68,13 @@ impl SvgConverter {
         self.doc = Some(crate::build_demo_doc());
         self.undo.clear();
         self.redo.clear();
+        self.cache.clear();
     }
 
-    /// Lay out and render the current document.
-    /// Returns JSON: {"pages": [...], "hits": [...], "can_undo": .., "can_redo": ..}.
-    pub fn render(&self) -> Result<String, JsValue> {
+    /// Lay out and render, reporting only pages/hit maps that changed since
+    /// the previous call. JSON: {"total": N, "pages": [[i, svg], ...],
+    /// "hits": [[i, [run, ...]], ...], "can_undo": .., "can_redo": ..}.
+    pub fn render(&mut self) -> Result<String, JsValue> {
         let doc = self.doc.as_ref().ok_or_else(|| err("no document loaded"))?;
         let fonts: Vec<(&str, &[u8])> = self
             .fonts
@@ -76,10 +82,11 @@ impl SvgConverter {
             .map(|(family, data)| (family.as_str(), data.as_slice()))
             .collect();
         let layout = doc.layout_with_fonts(&fonts).map_err(err)?;
-        let (pages, hits) = render_with_hits(doc, &layout);
+        let delta = render_delta(doc, &layout, &mut self.cache);
         serde_json::to_string(&RenderOut {
-            pages: &pages,
-            hits: &hits,
+            total: delta.total_pages,
+            pages: delta.pages,
+            hits: delta.hits,
             can_undo: !self.undo.is_empty(),
             can_redo: !self.redo.is_empty(),
         })
