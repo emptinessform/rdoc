@@ -285,7 +285,7 @@ impl SvgConverter {
     }
 
     /// Split the paragraph at any editable hit path at a char offset
-    /// (Enter). Endnotes are not supported yet.
+    /// (Enter).
     pub fn split(&mut self, path: &str, offset: usize) -> Result<String, JsValue> {
         let Some(at) = parse_edit_path(path) else {
             return Err(err("not an editable location"));
@@ -305,8 +305,9 @@ impl SvgConverter {
                 } => d.split_footnote_paragraph(*id, *para, offset),
                 crate::EditPath::Note {
                     is_footnote: false,
-                    ..
-                } => false,
+                    id,
+                    para,
+                } => d.split_endnote_paragraph(*id, *para, offset),
             },
             "split",
         )
@@ -333,8 +334,9 @@ impl SvgConverter {
                 } => d.merge_footnote_paragraph(*id, *para),
                 crate::EditPath::Note {
                     is_footnote: false,
-                    ..
-                } => false,
+                    id,
+                    para,
+                } => d.merge_endnote_paragraph(*id, *para),
             },
             "merge",
         )

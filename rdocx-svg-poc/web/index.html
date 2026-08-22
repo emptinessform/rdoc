@@ -865,6 +865,7 @@
       const t = performance.now();
       apply(conv.render(), performance.now() - t);
     },
+    hits: (page) => pageHits[page - 1] || [],
     state: () => ({
       caret, sel, lastMs, lastDelta, zoom,
       mapped: allHits().filter(h => h.path !== null).length,

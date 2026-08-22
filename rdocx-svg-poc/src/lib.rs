@@ -70,6 +70,10 @@ pub fn build_demo_doc() -> Document {
     let mut p = doc.add_paragraph("이 문장에는 각주가 달려 있습니다");
     p.add_footnote_ref(note_id);
 
+    let en_id = doc.add_endnote("미주도 본문과 같은 타입 필드입니다 — 문서 끝에서 편집해 보세요.");
+    let mut p = doc.add_paragraph("그리고 이 문장에는 미주가 달려 있습니다");
+    p.add_endnote_ref(en_id);
+
     doc.add_paragraph("Layout features exercised below: a bulleted list and a bordered table with header shading.");
 
     doc.add_bullet_list_item("Glyph outlines extracted with ttf-parser", 0);
