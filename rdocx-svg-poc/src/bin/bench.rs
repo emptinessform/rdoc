@@ -4,7 +4,7 @@
 use std::fmt::Write as _;
 use std::time::Instant;
 
-use rdocx_svg_poc::{insert_at, render_with_hits};
+use rdocx_svg_poc::{EditPath, delete_range_across, insert_at, render_with_hits};
 
 fn main() {
     let mut doc = rdocx::Document::new();
@@ -60,6 +60,48 @@ fn main() {
     }
     let mean = keystroke.iter().sum::<f64>() / keystroke.len() as f64;
     let min = keystroke.iter().cloned().fold(f64::MAX, f64::min);
+
+    // Structural ops (S7+): these change the source node table, so the
+    // pagination cache falls back to a full pass — the interesting number is
+    // how far that fallback is from the typing fast path. Each op runs at
+    // three locations; the layout after each is what the editor would pay.
+    fn op(
+        doc: &mut rdocx::Document,
+        name: &str,
+        f: &mut dyn FnMut(&mut rdocx::Document, usize) -> bool,
+    ) {
+        let mut ms = Vec::new();
+        for &at in &[200usize, 400, 600] {
+            assert!(f(doc, at), "{name} failed at {at}");
+            let t = Instant::now();
+            let _ = doc.layout().expect("layout");
+            ms.push(t.elapsed().as_secs_f64() * 1000.0);
+        }
+        println!("{name}: {:.0} / {:.0} / {:.0} ms", ms[0], ms[1], ms[2]);
+    }
+    op(&mut doc, "Enter (split)", &mut |d, at| {
+        d.split_paragraph_at_path(&[at], 20)
+    });
+    op(&mut doc, "Backspace merge", &mut |d, at| {
+        d.merge_paragraph_at_path(&[at + 1])
+    });
+    op(&mut doc, "selection delete across 2 paragraphs", &mut |d, at| {
+        delete_range_across(
+            d,
+            &EditPath::Doc(vec![at]),
+            10,
+            &EditPath::Doc(vec![at + 1]),
+            10,
+        )
+    });
+    op(&mut doc, "insert footnote", &mut |d, at| {
+        d.insert_footnote_ref_at(&[at], 5).is_some()
+    });
+    let last_note = doc.footnotes().last().map(|(id, _)| *id).unwrap();
+    let mut note_ids = vec![last_note - 2, last_note - 1, last_note];
+    op(&mut doc, "delete footnote", &mut |d, _| {
+        d.remove_footnote(note_ids.pop().unwrap())
+    });
 
     println!("pages: {pages}, hit runs: {}", hits.len());
     println!("cold layout: {cold:.0} ms");
