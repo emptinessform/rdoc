@@ -76,6 +76,7 @@
 7. <a href="#s7">완성하며 배운 것 — 체크포인트의 함정과 공유의 힘</a><br>
 8. <a href="#s8">한글 입력의 비밀 — IME 조합과 undo 묶기</a><br>
 9. <a href="#s9">지문에 숨어든 일련번호 — 조용히 죽는 캐시</a><br>
+10. <a href="#s10">글자는 자기가 어디서 왔는지 안다 — 소스 맵과 표 셀 편집</a><br>
 </div>
 
 <h2 id="s1">1. 이 프로젝트는 무엇을 하나</h2>
@@ -471,6 +472,60 @@ undo 더미에 쌓는데, 조합 중간 단계도 편집이라 "한" 하나에 �
 넣을 것. ② 캐시는 조용히 죽습니다 — 정확성 테스트로는 안 잡힙니다.
 "캐시가 맞았는가"를 보여 주는 진단 로그(우리는 <code>RDOCX_TIMING</code>)를
 처음부터 심어 두면, 이런 문제가 수치("env changed" 10회)로 바로 드러납니다.
+</div>
+
+<h2 id="s10">10. 글자는 자기가 어디서 왔는지 안다 — 소스 맵과 표 셀 편집</h2>
+<p>
+화면의 글자를 클릭했을 때 "문서의 어느 문단, 몇 번째 글자"인지 알아내는
+것을 <b>역매핑</b>이라 합니다. 지금까지는 레이아웃 결과에 출처 정보가
+없어서, 화면 글자열을 문서 텍스트에서 <i>검색</i>해 위치를 추측했습니다
+(텍스트 매칭). 같은 문구가 두 번 나오면 틀릴 수 있고, 표 셀은 아예
+포기했었습니다.
+</p>
+<figure>
+<svg viewBox="0 0 740 170" role="img" aria-label="소스 맵 역매핑 다이어그램">
+  <text x="10" y="20" font-size="13" font-weight="bold">이전: 텍스트 매칭 (추측)</text>
+  <rect class="bx" x="10" y="30" width="150" height="36" rx="6"/>
+  <text x="85" y="53" text-anchor="middle" font-size="12">화면: "Border"</text>
+  <rect class="bx" x="230" y="30" width="190" height="36" rx="6"/>
+  <text x="325" y="47" text-anchor="middle" font-size="11">문서 전체에서 "Border" 검색…</text>
+  <text x="325" y="61" text-anchor="middle" font-size="11" class="mut">동명이인 위험 · 표 셀은 검색 불가</text>
+  <path class="ln" d="M160 48 h65" marker-end="url(#ar5)"/>
+  <text x="10" y="105" font-size="13" font-weight="bold">현재: 소스 맵 (증명서)</text>
+  <rect class="bx" x="10" y="115" width="150" height="36" rx="6"/>
+  <text x="85" y="132" text-anchor="middle" font-size="12">화면: "Border"</text>
+  <text x="85" y="146" text-anchor="middle" font-size="10" class="mut">+ 출처표 (node 41, 0..6)</text>
+  <rect class="hot" x="230" y="115" width="260" height="36" rx="6"/>
+  <text x="360" y="132" text-anchor="middle" font-size="12">경로 d/8.1.0.0 = 8번 표 → 1행 0열</text>
+  <text x="360" y="146" text-anchor="middle" font-size="10" class="mut">글자 범위까지 정확</text>
+  <path class="acc" d="M160 133 h65" marker-end="url(#ar5)"/>
+  <rect class="bx" x="530" y="115" width="180" height="36" rx="6"/>
+  <text x="620" y="138" text-anchor="middle" font-size="12">셀 안에서 바로 편집 ✓</text>
+  <path class="acc" d="M490 133 h35" marker-end="url(#ar5)"/>
+  <defs>
+    <marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+</svg>
+<figcaption>업스트림 v0.8.0부터 모든 글자가 출처 증명서(SourceSpan)를 달고 나옵니다.</figcaption>
+</figure>
+<p>
+업스트림에 제안했던 provenance(출처 추적)가 v0.8.0에 공식 탑재되면서,
+이제 레이아웃 결과의 모든 글자 조각이 "나는 문서의 <i>이 문단</i>의
+<i>이 글자 범위</i>다"라는 증명서를 달고 나옵니다. 우리는 그 증명서를
+경로 문자열("d/8.1.0.0" = 본문 8번째 항목인 표의 1행 0열 첫 문단)로
+바꿔 화면 글자마다 붙여 두고, 클릭하면 그 경로로 문서를 직접 수정합니다.
+추측이 확신이 되자 <b>표 셀 편집이 그냥 열렸습니다</b> — 타이핑, 한글
+조합, 선택 대치, undo까지 본문과 동일하게.
+</p>
+<div class="box">
+<b>배운 것</b> — 주소를 설계할 때 "지금 화면의 몇 번째"(결과-로컬 id)와
+"문서 구조상 어디"(경로)를 구분해야 합니다. id는 레이아웃마다 바뀌지만
+경로는 편집 전후로 안정적이라, JS 쪽 캐럿/선택 상태는 전부 경로로만
+들고 있습니다. 그리고 인프라(소스 맵)를 업스트림에 제안해 공식화되면,
+그 위의 기능(셀 편집)은 우회로를 걷어내는 것만으로 완성됩니다 —
+우회는 빚이고, 인프라 기여가 상환입니다.
 </div>
 
 </body>

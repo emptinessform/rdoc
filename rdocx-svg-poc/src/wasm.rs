@@ -9,8 +9,9 @@
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    HitRun, RenderCache, delete_char_before, delete_range, insert_at, render_delta,
-    split_paragraph, toggle_format,
+    HitRun, RenderCache, body_order_of, delete_char_before_path, delete_range,
+    delete_range_in_para_path, insert_at_path, parse_doc_path, render_delta, split_paragraph,
+    toggle_format_path,
 };
 
 const UNDO_CAP: usize = 100;
@@ -89,7 +90,7 @@ impl SvgConverter {
             .map(|(family, data)| (family.as_str(), data.as_slice()))
             .collect();
         let layout = doc.layout_with_fonts_and_bundled_fallback(&fonts).map_err(err)?;
-        let delta = render_delta(doc, &layout.layout, &mut self.cache);
+        let delta = render_delta(&layout, &mut self.cache);
         serde_json::to_string(&RenderOut {
             total: delta.total_pages,
             pages: delta.pages,
@@ -158,65 +159,163 @@ impl SvgConverter {
         }
     }
 
-    /// Insert text at (paragraph, char offset), then re-render.
-    pub fn insert(&mut self, para: usize, offset: usize, text: &str) -> Result<String, JsValue> {
+    /// Insert text at (source path, char offset), then re-render. Paths are
+    /// the Document-story hit paths ("d/12" body, "d/12.0.1.0" table cell).
+    pub fn insert(&mut self, path: &str, offset: usize, text: &str) -> Result<String, JsValue> {
+        let Some(children) = parse_doc_path(path) else {
+            return Err(err("not an editable location"));
+        };
         let text = text.to_owned();
-        self.mutate(move |d| insert_at(d, para, offset, &text), "insert")
+        self.mutate(
+            move |d| insert_at_path(d, &children, offset, &text),
+            "insert",
+        )
     }
 
-    /// Delete the character before (paragraph, char offset), then re-render.
-    pub fn delete(&mut self, para: usize, offset: usize) -> Result<String, JsValue> {
-        self.mutate(move |d| delete_char_before(d, para, offset), "delete")
+    /// Delete the character before (source path, char offset).
+    pub fn delete(&mut self, path: &str, offset: usize) -> Result<String, JsValue> {
+        let Some(children) = parse_doc_path(path) else {
+            return Err(err("not an editable location"));
+        };
+        self.mutate(
+            move |d| delete_char_before_path(d, &children, offset),
+            "delete",
+        )
     }
 
-    /// Delete an arbitrary range (possibly across paragraphs).
+    /// Delete an arbitrary range. Within one paragraph (body or table cell)
+    /// any range works; across paragraphs both ends must be body paragraphs.
     pub fn delete_selection(
         &mut self,
-        pa: usize,
+        pa: &str,
         oa: usize,
-        pb: usize,
+        pb: &str,
         ob: usize,
     ) -> Result<String, JsValue> {
-        self.mutate(move |d| delete_range(d, pa, oa, pb, ob), "delete range")
+        let (Some(ca), Some(cb)) = (parse_doc_path(pa), parse_doc_path(pb)) else {
+            return Err(err("not an editable location"));
+        };
+        if ca == cb {
+            return self.mutate(
+                move |d| delete_range_in_para_path(d, &ca, oa.min(ob), oa.max(ob)),
+                "delete range",
+            );
+        }
+        if ca.len() != 1 || cb.len() != 1 {
+            return Err(err(
+                "selection edits across table cells are not supported yet",
+            ));
+        }
+        self.mutate(
+            move |d| {
+                let (Some(a), Some(b)) = (body_order_of(d, ca[0]), body_order_of(d, cb[0]))
+                else {
+                    return false;
+                };
+                delete_range(d, a, oa, b, ob)
+            },
+            "delete range",
+        )
     }
 
     /// Replace [start, end) in one paragraph with text (IME composition).
     pub fn replace_range(
         &mut self,
-        para: usize,
+        path: &str,
         start: usize,
         end: usize,
         text: &str,
     ) -> Result<String, JsValue> {
+        let Some(children) = parse_doc_path(path) else {
+            return Err(err("not an editable location"));
+        };
         let text = text.to_owned();
         self.mutate(
             move |d| {
-                crate::delete_range_in_para(d, para, start, end)
-                    && (text.is_empty() || insert_at(d, para, start, &text))
+                delete_range_in_para_path(d, &children, start, end)
+                    && (text.is_empty() || insert_at_path(d, &children, start, &text))
             },
             "replace",
         )
     }
 
-    /// Split a paragraph at a char offset (Enter).
-    pub fn split(&mut self, para: usize, offset: usize) -> Result<String, JsValue> {
-        self.mutate(move |d| split_paragraph(d, para, offset), "split")
+    /// Split a body paragraph at a char offset (Enter). Table-cell
+    /// paragraphs cannot split yet.
+    pub fn split(&mut self, path: &str, offset: usize) -> Result<String, JsValue> {
+        let Some(children) = parse_doc_path(path) else {
+            return Err(err("not an editable location"));
+        };
+        if children.len() != 1 {
+            return Err(err("Enter inside a table cell is not supported yet"));
+        }
+        self.mutate(
+            move |d| {
+                let Some(order) = body_order_of(d, children[0]) else {
+                    return false;
+                };
+                split_paragraph(d, order, offset)
+            },
+            "split",
+        )
     }
 
-    /// Merge a paragraph into the previous one (Backspace at offset 0).
-    pub fn merge(&mut self, para: usize) -> Result<String, JsValue> {
-        self.mutate(move |d| crate::merge_paragraph_into_prev(d, para), "merge")
+    /// Merge a body paragraph into the previous one (Backspace at offset 0).
+    pub fn merge(&mut self, path: &str) -> Result<String, JsValue> {
+        let Some(children) = parse_doc_path(path) else {
+            return Err(err("not an editable location"));
+        };
+        if children.len() != 1 {
+            return Err(err("merge inside a table cell is not supported yet"));
+        }
+        self.mutate(
+            move |d| {
+                let Some(order) = body_order_of(d, children[0]) else {
+                    return false;
+                };
+                crate::merge_paragraph_into_prev(d, order)
+            },
+            "merge",
+        )
     }
 
     /// Toggle bold ('b'), italic ('i'), or underline ('u') over a range.
     pub fn toggle(
         &mut self,
-        para: usize,
+        path: &str,
         start: usize,
         end: usize,
         fmt: char,
     ) -> Result<String, JsValue> {
-        self.mutate(move |d| toggle_format(d, para, start, end, fmt), "toggle")
+        let Some(children) = parse_doc_path(path) else {
+            return Err(err("not an editable location"));
+        };
+        self.mutate(
+            move |d| toggle_format_path(d, &children, start, end, fmt),
+            "toggle",
+        )
+    }
+
+    /// paragraphs()-order index of a body hit path, for caret arithmetic
+    /// around split/merge. None for table cells and non-document stories.
+    pub fn path_order(&self, path: &str) -> Option<usize> {
+        let children = parse_doc_path(path)?;
+        if children.len() != 1 {
+            return None;
+        }
+        body_order_of(self.doc.as_ref()?, children[0])
+    }
+
+    /// Hit path of the nth body paragraph (inverse of `path_order`).
+    pub fn order_path(&self, order: usize) -> Option<String> {
+        let doc = self.doc.as_ref()?;
+        let body_index = doc.paragraph_body_index(order)?;
+        Some(format!("d/{body_index}"))
+    }
+
+    /// Text of the paragraph at a Document-story hit path.
+    pub fn paragraph_text_at(&self, path: &str) -> Option<String> {
+        let children = parse_doc_path(path)?;
+        self.doc.as_ref()?.paragraph_text_at_path(&children)
     }
 
     pub fn undo(&mut self) -> Result<String, JsValue> {

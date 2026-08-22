@@ -47,7 +47,7 @@
   // ---- state ---------------------------------------------------------------
 
   let pageHits = [];        // pageHits[pageIndex] = [HitRun...] (ids page-local)
-  let caret = null;         // {para, off} in document coordinates
+  let caret = null;         // {path, off} in document coordinates
   let sel = null;           // {a, b} where each is {page, idx, k}; a <= b
   let lastMs = 0;
   let lastDelta = "";
@@ -88,7 +88,7 @@
   }
 
   function report(extra) {
-    const c = caret ? `caret: para ${caret.para}, offset ${caret.off}` : (sel ? "selection" : "no caret");
+    const c = caret ? `caret: ${caret.path}, offset ${caret.off}` : (sel ? "selection" : "no caret");
     status(`${c} | last op ${lastMs.toFixed(1)} ms (${lastDelta})${extra ? " | " + extra : ""}`);
   }
 
@@ -114,7 +114,7 @@
     if (!caret) return null;
     let best = null;
     for (const h of allHits()) {
-      if (h.para !== caret.para || h.start === null) continue;
+      if (h.path !== caret.path || h.start === null) continue;
       const len = chars(h.text).length;
       if (caret.off >= h.start && caret.off <= h.start + len) {
         best = { hit: h, k: caret.off - h.start };
@@ -181,7 +181,7 @@
     if (!comp || comp.len === 0 || !caret) return;
     const from = comp.base, to = comp.base + comp.len;
     for (const h of allHits()) {
-      if (h.para !== caret.para || h.start === null) continue;
+      if (h.path !== caret.path || h.start === null) continue;
       const len = chars(h.text).length;
       const k1 = Math.max(0, from - h.start);
       const k2 = Math.min(len, to - h.start);
@@ -214,8 +214,8 @@
       const k2 = sameB ? sel.b.k : cs.length;
       if (k2 <= k1) continue;
       if (prev) {
-        const paraBreak = prev.para !== null && h.para !== null && prev.para !== h.para;
-        const lineBreak = (prev.para === null || h.para === null) &&
+        const paraBreak = prev.path !== null && h.path !== null && prev.path !== h.path;
+        const lineBreak = (prev.path === null || h.path === null) &&
                           (h.page !== prev.page || Math.abs(h.y - prev.y) > 0.5 * h.size);
         if (paraBreak || lineBreak) out += "\n";
       }
@@ -286,13 +286,19 @@
     const found = findHit(page, x, y);
     if (!found) return;
     const { hit: h, k } = found;
-    if (h.para === null) {
+    if (h.path === null) {
       caret = null;
       drawCaret();
-      report(`segment ${JSON.stringify(h.text)} has no document mapping (needs upstream provenance)`);
+      report(`segment ${JSON.stringify(h.text)} is decorative (marker/field) — not editable`);
       return;
     }
-    caret = { para: h.para, off: h.start + k };
+    if (!h.path.startsWith("d/")) {
+      caret = null;
+      drawCaret();
+      report(`${h.path}: header/footnote editing is a later stage`);
+      return;
+    }
+    caret = { path: h.path, off: h.start + k };
     drawCaret();
     report();
     ime.focus({ preventScroll: true });
@@ -305,9 +311,18 @@
   function selRange() {
     if (!sel) return null;
     const A = getRun(sel.a), B = getRun(sel.b);
-    if (!A || !B || A.para === null || B.para === null) return null;
-    let pa = A.para, oa = A.start + sel.a.k, pb = B.para, ob = B.start + sel.b.k;
-    if (pb < pa || (pa === pb && ob < oa)) [pa, oa, pb, ob] = [pb, ob, pa, oa];
+    if (!A || !B || A.path === null || B.path === null) return null;
+    if (!A.path.startsWith("d/") || !B.path.startsWith("d/")) return null;
+    let pa = A.path, oa = A.start + sel.a.k, pb = B.path, ob = B.start + sel.b.k;
+    if (pa === pb) {
+      if (ob < oa) [oa, ob] = [ob, oa];
+      return { pa, oa, pb, ob };
+    }
+    // Cross-paragraph ranges are body-only; order by body index.
+    const bodyIdx = (p) => (p.includes(".") ? null : +p.slice(2));
+    const ia = bodyIdx(pa), ib = bodyIdx(pb);
+    if (ia === null || ib === null) return null;
+    if (ib < ia) [pa, oa, pb, ob] = [pb, ob, pa, oa];
     return { pa, oa, pb, ob };
   }
 
@@ -324,7 +339,7 @@
   function typeText(s) {
     if (!caret) return;
     edit(() => {
-      const json = conv.insert(caret.para, caret.off, s);
+      const json = conv.insert(caret.path, caret.off, s);
       caret.off += chars(s).length;
       return json;
     });
@@ -333,7 +348,7 @@
   function backspace() {
     if (!caret || caret.off === 0) return;
     edit(() => {
-      const json = conv.delete(caret.para, caret.off);
+      const json = conv.delete(caret.path, caret.off);
       caret.off -= 1;
       return json;
     });
@@ -344,7 +359,7 @@
     if (!r) return;
     edit(() => {
       const json = conv.delete_selection(r.pa, r.oa, r.pb, r.ob);
-      caret = { para: r.pa, off: r.oa };
+      caret = { path: r.pa, off: r.oa };
       sel = null;
       return json;
     });
@@ -356,7 +371,7 @@
     edit(() => {
       conv.delete_selection(r.pa, r.oa, r.pb, r.ob);
       const json = conv.insert(r.pa, r.oa, s);
-      caret = { para: r.pa, off: r.oa + chars(s).length };
+      caret = { path: r.pa, off: r.oa + chars(s).length };
       sel = null;
       return json;
     });
@@ -365,18 +380,20 @@
   function enterKey() {
     if (!caret) return;
     edit(() => {
-      const json = conv.split(caret.para, caret.off);
-      caret = { para: caret.para + 1, off: 0 };
+      const order = conv.path_order(caret.path);
+      const json = conv.split(caret.path, caret.off);
+      caret = order == null ? null : { path: conv.order_path(order + 1), off: 0 };
       return json;
     });
   }
 
   function mergePrev() {
-    if (!caret || caret.para === 0) return;
-    const prevLen = chars(conv.paragraph_texts()[caret.para - 1] || "").length;
+    const order = caret ? conv.path_order(caret.path) : null;
+    if (order == null || order === 0) return;
+    const prevLen = chars(conv.paragraph_texts()[order - 1] || "").length;
     edit(() => {
-      const json = conv.merge(caret.para);
-      caret = { para: caret.para - 1, off: prevLen };
+      const json = conv.merge(caret.path);
+      caret = { path: conv.order_path(order - 1), off: prevLen };
       return json;
     });
   }
@@ -388,7 +405,7 @@
     edit(() => {
       const json = conv.toggle(r.pa, r.oa, r.ob, f);
       sel = null;
-      caret = { para: r.pa, off: r.ob };
+      caret = { path: r.pa, off: r.ob };
       return json;
     });
   }
@@ -412,7 +429,7 @@
     } else if (e.key === "Backspace") {
       e.preventDefault();
       if (selRange()) deleteSel();
-      else if (caret && caret.off === 0 && caret.para > 0) mergePrev();
+      else if (caret && caret.off === 0 && conv.path_order(caret.path) > 0) mergePrev();
       else if (caret) backspace();
     } else if (e.key === "Enter") {
       e.preventDefault();
@@ -429,7 +446,7 @@
   function applyComp(data) {
     if (!comp || !caret) return;
     edit(() => {
-      const json = conv.replace_range(caret.para, comp.base, comp.base + comp.len, data);
+      const json = conv.replace_range(caret.path, comp.base, comp.base + comp.len, data);
       comp.len = chars(data).length;
       caret.off = comp.base + comp.len;
       return json;
@@ -492,6 +509,8 @@
     undo: doUndo,
     redo: doRedo,
     paraTexts: () => conv.paragraph_texts(),
+    textAt: (p) => conv.paragraph_text_at(p),
+    pathOrder: (p) => conv.path_order(p),
     simIme: (steps) => {
       ime.focus();
       ime.dispatchEvent(new CompositionEvent("compositionstart"));
@@ -528,7 +547,7 @@
     },
     state: () => ({
       caret, sel, lastMs, lastDelta, zoom,
-      mapped: allHits().filter(h => h.para !== null).length,
+      mapped: allHits().filter(h => h.path !== null).length,
       total: allHits().length,
     }),
   };

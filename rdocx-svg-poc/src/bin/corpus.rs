@@ -60,8 +60,8 @@ fn run_one(
     let layout = doc.layout().map_err(|e| format!("layout: {e}"))?;
     let layout_ms = t.elapsed().as_secs_f64() * 1000.0;
 
-    let (svgs, hits) = render_with_hits(&doc, &layout.layout);
-    let mapped = hits.iter().filter(|h| h.para.is_some()).count();
+    let (svgs, hits) = render_with_hits(&layout);
+    let mapped = hits.iter().filter(|h| h.path.is_some()).count();
     let svg_bytes: usize = svgs.iter().map(String::len).sum();
 
     let dir = out_root.join(name);

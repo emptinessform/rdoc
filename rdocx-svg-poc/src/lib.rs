@@ -129,12 +129,18 @@ pub struct HitRun {
     pub adv: Vec<f64>,
     /// Original text of the run segment.
     pub text: String,
-    /// Body paragraph index this segment maps to, if provenance matching
-    /// succeeded. `None` = unreachable by editing (table cells, markers...)
-    /// until upstream layout carries real source positions.
-    pub para: Option<usize>,
-    /// Character offset of this segment within that paragraph.
+    /// F-X037 source path of the paragraph this segment renders, as a
+    /// compact string: `"d/12"` (body paragraph 12), `"d/12.0.1.0"` (table
+    /// cell paragraph, repeating row.cell.content triples), `"h/rId3/0"`,
+    /// `"f/rId3/0"`, `"fn/2/0"`, `"en/3/0"`. `None` = decorative or
+    /// unattributed content (list markers, evaluated fields, leaders).
+    pub path: Option<String>,
+    /// Character offset of this segment within that paragraph
+    /// (`SourceSpan::char_start`).
     pub start: Option<usize>,
+    /// Result-local source node id, resolved into `path` after collection.
+    #[serde(skip)]
+    node: Option<oxml_layout::SourceNodeId>,
 }
 
 struct FaceInfo<'a> {
@@ -395,8 +401,9 @@ impl<'a> SvgRenderer<'a> {
             size: run.font_size,
             adv: char_advances(&run.text, &run.advances),
             text: run.text.clone(),
-            para: None,
-            start: None,
+            path: None,
+            start: run.source.map(|span| span.char_start as usize),
+            node: run.source.map(|span| span.node),
         });
         hit_id
     }
@@ -780,15 +787,16 @@ fn char_advances(text: &str, glyph_advances: &[f64]) -> Vec<f64> {
 }
 
 /// Render all pages and return (svgs, hit runs mapped to body paragraphs).
-pub fn render_with_hits(doc: &Document, layout: &LayoutResult) -> (Vec<String>, Vec<HitRun>) {
-    let mut renderer = SvgRenderer::new(&layout.fonts);
+pub fn render_with_hits(layout: &rdocx::WordLayoutResult) -> (Vec<String>, Vec<HitRun>) {
+    let mut renderer = SvgRenderer::new(&layout.layout.fonts);
     let svgs: Vec<String> = layout
+        .layout
         .pages
         .iter()
         .map(|page| renderer.render_page(page))
         .collect();
     let mut hits = renderer.take_hits();
-    map_hits_to_doc(doc, &mut hits);
+    resolve_hit_paths(&mut hits, layout);
     (svgs, hits)
 }
 
@@ -931,16 +939,16 @@ fn hash_elements(elements: &[PositionedElement], h: &mut Fnv) {
 /// but SVG strings are generated only for pages whose element hash changed
 /// — the editor path: a keystroke reflows one page and leaves the other
 /// pages' SVG generation, transfer, and DOM untouched.
-pub fn render_delta(doc: &Document, layout: &LayoutResult, cache: &mut RenderCache) -> RenderDelta {
-    let n = layout.pages.len();
-    let mut renderer = SvgRenderer::new(&layout.fonts);
+pub fn render_delta(layout: &rdocx::WordLayoutResult, cache: &mut RenderCache) -> RenderDelta {
+    let n = layout.layout.pages.len();
+    let mut renderer = SvgRenderer::new(&layout.layout.fonts);
 
     // Pass 1: hits for every page, no SVG.
-    for page in &layout.pages {
+    for page in &layout.layout.pages {
         renderer.collect_hits(page);
     }
     let mut hits = renderer.take_hits();
-    map_hits_to_doc(doc, &mut hits);
+    resolve_hit_paths(&mut hits, layout);
     let mut by_page: Vec<Vec<HitRun>> = vec![Vec::new(); n];
     for h in hits {
         let p = h.page - 1;
@@ -957,7 +965,7 @@ pub fn render_delta(doc: &Document, layout: &LayoutResult, cache: &mut RenderCac
         pages: Vec::new(),
         hits: Vec::new(),
     };
-    for (i, page) in layout.pages.iter().enumerate() {
+    for (i, page) in layout.layout.pages.iter().enumerate() {
         let mut h = Fnv::new();
         h.f64(page.width);
         h.f64(page.height);
@@ -972,7 +980,7 @@ pub fn render_delta(doc: &Document, layout: &LayoutResult, cache: &mut RenderCac
     for (i, runs) in by_page.into_iter().enumerate() {
         let mut buf = String::new();
         for r in &runs {
-            let _ = write!(buf, "{}|{}|{}|{:?}|{:?};", r.text, r.x, r.y, r.para, r.start);
+            let _ = write!(buf, "{}|{}|{}|{:?}|{:?};", r.text, r.x, r.y, r.path, r.start);
         }
         let h = fnv(buf.as_bytes());
         if cache.hit_hashes[i] != h {
@@ -983,55 +991,78 @@ pub fn render_delta(doc: &Document, layout: &LayoutResult, cache: &mut RenderCac
     delta
 }
 
-/// Greedy sequential matching of rendered run segments back to body
-/// paragraphs. This is the workaround for layout output carrying no source
+/// Resolution of rendered run segments to their source paragraphs, via the
+/// F-X037 source map. (Formerly a greedy text-matching workaround; layout
+/// output now carries exact source
 /// positions (the "provenance" gap): segments are matched by text, in reading
 /// order, with a cursor that only moves forward. Segments that never match —
 /// table cell content, list markers, headers — stay `None` and are read-only
 /// to the editor layer.
-pub fn map_hits_to_doc(doc: &Document, hits: &mut [HitRun]) {
-    let texts: Vec<String> = doc.paragraphs().iter().map(|p| p.text()).collect();
-    let mut cur_p = 0usize;
-    let mut cur_off = 0usize; // char offset within texts[cur_p]
-
+/// Resolve each hit's result-local source id into a stable path string via
+/// the layout bundle's F-X037 source table. Replaces the former
+/// text-matching provenance bypass, which could not reach table cells.
+pub fn resolve_hit_paths(hits: &mut [HitRun], layout: &rdocx::WordLayoutResult) {
     for hit in hits.iter_mut() {
-        if hit.text.is_empty() {
+        let Some(node) = hit.node else {
             continue;
+        };
+        let Some(path) = layout.source_node(node) else {
+            continue;
+        };
+        hit.path = Some(format_source_path(path));
+    }
+}
+
+/// Compact string form of a source path; see [`HitRun::path`].
+fn format_source_path(path: &rdocx::WordSourcePath) -> String {
+    let mut out = String::new();
+    match &path.story {
+        rdocx::WordStory::Document => out.push('d'),
+        rdocx::WordStory::Header { relationship_id } => {
+            let _ = write!(out, "h/{relationship_id}");
         }
-        // Tiny fragments (single spaces, punctuation) match almost anywhere;
-        // only accept them exactly at the cursor.
-        let tiny = hit.text.chars().count() <= 1;
-        let mut found = None;
-        'search: for p in cur_p..texts.len() {
-            let hay = &texts[p];
-            let from_char = if p == cur_p { cur_off } else { 0 };
-            let from_byte = char_to_byte(hay, from_char);
-            if tiny {
-                // Accept only at the cursor, or at the start of one of the
-                // next few paragraphs (a new paragraph often begins with a
-                // one-character segment, e.g. a CJK syllable).
-                if hay[from_byte..].starts_with(&hit.text) {
-                    found = Some((p, from_char));
-                    break 'search;
-                }
-                if p >= cur_p + 3 {
-                    break 'search;
-                }
-                continue;
-            }
-            if let Some(rel) = hay[from_byte..].find(&hit.text) {
-                let at_char = from_char + hay[from_byte..from_byte + rel].chars().count();
-                found = Some((p, at_char));
-                break 'search;
-            }
+        rdocx::WordStory::Footer { relationship_id } => {
+            let _ = write!(out, "f/{relationship_id}");
         }
-        if let Some((p, at)) = found {
-            hit.para = Some(p);
-            hit.start = Some(at);
-            cur_p = p;
-            cur_off = at + hit.text.chars().count();
+        rdocx::WordStory::Footnote { id } => {
+            let _ = write!(out, "fn/{id}");
+        }
+        rdocx::WordStory::Endnote { id } => {
+            let _ = write!(out, "en/{id}");
         }
     }
+    out.push('/');
+    for (i, child) in path.children.iter().enumerate() {
+        if i > 0 {
+            out.push('.');
+        }
+        let _ = write!(out, "{child}");
+    }
+    out
+}
+
+/// Parse the children of a Document-story hit path ("d/12", "d/12.0.1.0").
+/// Non-document stories (headers, notes) return None: not editable yet.
+pub fn parse_doc_path(path: &str) -> Option<Vec<usize>> {
+    let rest = path.strip_prefix("d/")?;
+    rest.split('.').map(|c| c.parse().ok()).collect()
+}
+
+/// paragraphs()-order index of the body paragraph at `body_index`, for the
+/// order-addressed operations (split, merge, cross-paragraph ranges).
+pub fn body_order_of(doc: &Document, body_index: usize) -> Option<usize> {
+    let mut order = 0usize;
+    for (i, item) in doc.body_items().enumerate() {
+        if let rdocx::BodyItemRef::Paragraph(_) = item {
+            if i == body_index {
+                return Some(order);
+            }
+            order += 1;
+        } else if i == body_index {
+            return None;
+        }
+    }
+    None
 }
 
 fn char_to_byte(s: &str, char_idx: usize) -> usize {
@@ -1043,7 +1074,16 @@ fn char_to_byte(s: &str, char_idx: usize) -> usize {
 
 /// Insert text at a character offset within a body paragraph.
 pub fn insert_at(doc: &mut Document, para: usize, char_off: usize, s: &str) -> bool {
-    edit_paragraph(doc, para, |text| {
+    let Some(children) = doc.paragraph_body_index(para).map(|i| vec![i]) else {
+        return false;
+    };
+    insert_at_path(doc, &children, char_off, s)
+}
+
+/// Insert text at a character offset in the paragraph at a Document-story
+/// source path (body paragraph or table cell paragraph).
+pub fn insert_at_path(doc: &mut Document, children: &[usize], char_off: usize, s: &str) -> bool {
+    edit_paragraph_at(doc, children, |text| {
         let b = char_to_byte(text, char_off.min(text.chars().count()));
         let mut nt = String::with_capacity(text.len() + s.len());
         nt.push_str(&text[..b]);
@@ -1055,10 +1095,18 @@ pub fn insert_at(doc: &mut Document, para: usize, char_off: usize, s: &str) -> b
 
 /// Delete the character before `char_off` (backspace semantics).
 pub fn delete_char_before(doc: &mut Document, para: usize, char_off: usize) -> bool {
+    let Some(children) = doc.paragraph_body_index(para).map(|i| vec![i]) else {
+        return false;
+    };
+    delete_char_before_path(doc, &children, char_off)
+}
+
+/// Backspace within the paragraph at a Document-story source path.
+pub fn delete_char_before_path(doc: &mut Document, children: &[usize], char_off: usize) -> bool {
     if char_off == 0 {
         return false;
     }
-    edit_paragraph(doc, para, |text| {
+    edit_paragraph_at(doc, children, |text| {
         let n = text.chars().count();
         if char_off > n {
             return None;
@@ -1076,10 +1124,23 @@ pub fn delete_char_before(doc: &mut Document, para: usize, char_off: usize) -> b
 /// overlapping run's text. Runs that become empty are left in place (no
 /// public run-removal API yet — harmless to layout and to Word).
 pub fn delete_range_in_para(doc: &mut Document, para: usize, start: usize, end: usize) -> bool {
+    let Some(children) = doc.paragraph_body_index(para).map(|i| vec![i]) else {
+        return false;
+    };
+    delete_range_in_para_path(doc, &children, start, end)
+}
+
+/// Delete [start, end) within the paragraph at a Document-story source path.
+pub fn delete_range_in_para_path(
+    doc: &mut Document,
+    children: &[usize],
+    start: usize,
+    end: usize,
+) -> bool {
     if end <= start {
         return true;
     }
-    let Some(mut p) = doc.paragraph_mut(para) else {
+    let Some(mut p) = doc.paragraph_at_path_mut(children) else {
         return false;
     };
     let mut acc = 0usize;
@@ -1303,10 +1364,25 @@ pub fn toggle_format(
     end: usize,
     fmt: char,
 ) -> bool {
+    let Some(children) = doc.paragraph_body_index(para).map(|i| vec![i]) else {
+        return false;
+    };
+    toggle_format_path(doc, &children, start, end, fmt)
+}
+
+/// Toggle bold/italic/underline over [start, end) in the paragraph at a
+/// Document-story source path.
+pub fn toggle_format_path(
+    doc: &mut Document,
+    children: &[usize],
+    start: usize,
+    end: usize,
+    fmt: char,
+) -> bool {
     if end <= start {
         return false;
     }
-    let Some(mut p) = doc.paragraph_mut(para) else {
+    let Some(mut p) = doc.paragraph_at_path_mut(children) else {
         return false;
     };
     // Split at the end boundary first so earlier indices stay valid.
@@ -1355,12 +1431,12 @@ pub fn toggle_format(
 /// Apply a text edit to the run containing the paragraph-level offset.
 /// The closure sees the paragraph's full text with the offset already
 /// paragraph-relative; internally the edit is routed to the owning run.
-fn edit_paragraph(
+fn edit_paragraph_at(
     doc: &mut Document,
-    para: usize,
+    children: &[usize],
     edit: impl Fn(&str) -> Option<String>,
 ) -> bool {
-    let Some(mut p) = doc.paragraph_mut(para) else {
+    let Some(mut p) = doc.paragraph_at_path_mut(children) else {
         return false;
     };
     // Reconstruct the paragraph text run-by-run and apply the edit to the

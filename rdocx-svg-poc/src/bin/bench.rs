@@ -44,7 +44,7 @@ fn main() {
     let pages = layout.layout.pages.len();
 
     let t = Instant::now();
-    let (svgs, hits) = render_with_hits(&doc, &layout.layout);
+    let (svgs, hits) = render_with_hits(&layout);
     let render_ms = t.elapsed().as_secs_f64() * 1000.0;
     let svg_mb = svgs.iter().map(String::len).sum::<usize>() as f64 / 1e6;
     drop(layout);

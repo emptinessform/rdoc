@@ -25,7 +25,7 @@ fn main() {
         println!("  diagnostic: {}", d.message);
     }
 
-    let (svgs, hits) = render_with_hits(&doc, &layout.layout);
+    let (svgs, hits) = render_with_hits(&layout);
     for (i, svg) in svgs.iter().enumerate() {
         let path = out_dir.join(format!("page-{}.svg", i + 1));
         fs::write(&path, svg).expect("write svg");
@@ -34,7 +34,7 @@ fn main() {
 
     // Provenance mapping coverage: how many rendered segments trace back to a
     // body paragraph (the rest need real source positions from upstream).
-    let mapped = hits.iter().filter(|h| h.para.is_some()).count();
+    let mapped = hits.iter().filter(|h| h.path.is_some()).count();
     println!(
         "hit runs: {} total, {} mapped to paragraphs, {} unmapped",
         hits.len(),
@@ -44,10 +44,10 @@ fn main() {
     for h in hits.iter().take(6) {
         println!(
             "  #{} page {} para {:?} start {:?} {:?}",
-            h.id, h.page, h.para, h.start, h.text
+            h.id, h.page, h.path, h.start, h.text
         );
     }
-    for h in hits.iter().filter(|h| h.para.is_none()).take(6) {
+    for h in hits.iter().filter(|h| h.path.is_none()).take(6) {
         println!("  unmapped: #{} {:?}", h.id, h.text);
     }
     fs::write(
