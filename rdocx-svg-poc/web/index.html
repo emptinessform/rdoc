@@ -25,6 +25,11 @@
     <option value="1.5">150%</option>
     <option value="2">200%</option>
   </select></label>
+  <span id="alignbtns">
+    <button data-align="l" title="왼쪽 정렬 (Ctrl+L)">⮜</button>
+    <button data-align="c" title="가운데 정렬 (Ctrl+E)">⬌</button>
+    <button data-align="r" title="오른쪽 정렬 (Ctrl+R)">⮞</button>
+  </span>
   <span id="findbar" hidden>
     <input id="findq" placeholder="찾기" autocomplete="off" size="14">
     <span id="findcount"></span>
@@ -36,7 +41,7 @@
     <button id="findclose" title="닫기 (Esc)">✕</button>
   </span>
   <span id="status">loading wasm…</span>
-  <span id="hint">click: caret · drag: select · type/Enter/Backspace/화살표 · Ctrl+B/I/U · Ctrl+Z/Y · Ctrl+C/X/V · Ctrl+F 찾기/H 바꾸기 · Ctrl+Alt+F 각주/E 미주/D 삭제 · 한글 IME</span>
+  <span id="hint">click: caret · drag: select · type/Enter/Backspace/화살표 · Ctrl+B/I/U · Ctrl+L/E/R 정렬 · Ctrl+Z/Y · Ctrl+C/X/V · Ctrl+F 찾기/H 바꾸기 · Ctrl+Alt+F 각주/E 미주/D 삭제 · 한글 IME</span>
 </header>
 <div id="pages"></div>
 <input id="ime" autocomplete="off" style="position:fixed; top:0; left:-9999px; width:100px; opacity:0">
@@ -518,6 +523,33 @@
     try { await navigator.clipboard.writeText(text); } catch (e) { /* headless */ }
     report(`copied ${chars(text).length} chars`);
   }
+
+  // Paragraph alignment for the caret paragraph or every paragraph the
+  // selection touches, as one history entry. Text is unchanged, so the
+  // caret survives; the selection is redrawn from its refs afterwards.
+  function alignSelection(align) {
+    let paths = [];
+    const r = selRange();
+    if (r && r.kind === "scatter") paths = [...new Set(r.ranges.map((x) => x.path))];
+    else if (r && r.kind === "siblings") {
+      const idx = (pp) => +pp.match(/(\d+)$/)[1];
+      for (let i = idx(r.pa); i <= idx(r.pb); i++)
+        paths.push(r.pa.replace(/\d+$/, i));
+    } else if (r) paths = [r.pa];
+    else if (caret) paths = [caret.path];
+    if (!paths.length) { report("정렬: 캐럿을 두거나 선택하세요"); return; }
+    const keep = caret && { ...caret };
+    const keepSel = sel && { a: { ...sel.a }, b: { ...sel.b } };
+    edit(() => {
+      const json = conv.set_alignment_paths(JSON.stringify(paths), align);
+      caret = keep;
+      return json;
+    });
+    if (keepSel) { sel = keepSel; drawSelection(); }
+  }
+  document.querySelectorAll("#alignbtns button").forEach((b) => {
+    b.onclick = () => alignSelection(b.dataset.align);
+  });
 
   // Cut = copy, then the ordinary selection deletion (one history entry).
   function cutSelection() {
@@ -1029,6 +1061,11 @@
     if (ctrl && e.altKey && key === "e") { e.preventDefault(); insertEndnote(); return; }
     if (ctrl && e.altKey && key === "d") { e.preventDefault(); deleteNote(); return; }
     if (ctrl && (key === "b" || key === "i" || key === "u")) { e.preventDefault(); toggleFmt(key); return; }
+    if (ctrl && !e.altKey && (key === "l" || key === "e" || key === "r")) {
+      e.preventDefault();
+      alignSelection(key === "l" ? "l" : key === "e" ? "c" : "r");
+      return;
+    }
     if (ctrl || e.altKey) return;
     if (e.key.length === 1) {
       e.preventDefault();
@@ -1278,6 +1315,7 @@
     replaceWith: (q) => { replq.value = q; replaceCurrent(); },
     replaceAllWith: (q) => { replq.value = q; replaceAll(); },
     paste: doPaste,
+    align: alignSelection,
     findState: () => ({
       open: !findbar.hidden,
       count: findMatches.length,

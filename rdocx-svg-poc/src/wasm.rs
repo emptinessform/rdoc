@@ -412,6 +412,25 @@ impl SvgConverter {
         self.mutate(move |d| crate::split_at(d, &at, offset), "split")
     }
 
+    /// Set paragraph alignment ('l' | 'c' | 'r' | 'j') for every path in
+    /// the JSON string array, as one history entry (a selection can span
+    /// several paragraphs).
+    pub fn set_alignment_paths(&mut self, json: &str, align: char) -> Result<String, JsValue> {
+        let paths: Vec<String> =
+            serde_json::from_str(json).map_err(|e| err(&format!("bad paths: {e}")))?;
+        if paths.is_empty() {
+            return Err(err("no paragraphs"));
+        }
+        let ats: Vec<crate::EditPath> = paths
+            .iter()
+            .map(|p| parse_edit_path(p).ok_or_else(|| err("not an editable location")))
+            .collect::<Result<_, _>>()?;
+        self.mutate(
+            move |d| ats.iter().all(|at| crate::set_alignment_at(d, at, align)),
+            "align",
+        )
+    }
+
     /// Paste plain text at (path, char offset) as one history entry.
     /// Newlines (any convention) become paragraph splits, so a multi-line
     /// paste produces the same structure as typing the lines with Enter.

@@ -1263,6 +1263,47 @@ pub fn toggle_at(doc: &mut Document, at: &EditPath, start: usize, end: usize, fm
     }
 }
 
+/// Run `f` on the paragraph at any editable location (all six stories).
+pub fn with_paragraph_at<R>(
+    doc: &mut Document,
+    at: &EditPath,
+    f: impl FnOnce(&mut rdocx::Paragraph<'_>) -> R,
+) -> Option<R> {
+    match at {
+        EditPath::Doc(children) => {
+            let mut p = doc.paragraph_at_path_mut(children)?;
+            Some(f(&mut p))
+        }
+        EditPath::HeaderFooter {
+            is_header,
+            rel_id,
+            para,
+        } => doc.with_header_footer_paragraph_mut(*is_header, rel_id, *para, |mut p| f(&mut p)),
+        EditPath::Note {
+            is_footnote: true,
+            id,
+            para,
+        } => doc.with_footnote_paragraph_mut(*id, *para, |mut p| f(&mut p)),
+        EditPath::Note {
+            is_footnote: false,
+            id,
+            para,
+        } => doc.with_endnote_paragraph_mut(*id, *para, |mut p| f(&mut p)),
+    }
+}
+
+/// Set paragraph alignment ('l' | 'c' | 'r' | 'j') at any editable location.
+pub fn set_alignment_at(doc: &mut Document, at: &EditPath, align: char) -> bool {
+    let a = match align {
+        'l' => rdocx::Alignment::Left,
+        'c' => rdocx::Alignment::Center,
+        'r' => rdocx::Alignment::Right,
+        'j' => rdocx::Alignment::Justify,
+        _ => return false,
+    };
+    with_paragraph_at(doc, at, |p| p.set_alignment(a)).is_some()
+}
+
 /// Insert text at a character offset at any editable location.
 pub fn insert_text_at(doc: &mut Document, at: &EditPath, char_off: usize, s: &str) -> bool {
     edit_text_at(doc, at, |text| {
