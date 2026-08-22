@@ -288,6 +288,31 @@ impl<'a> SvgRenderer<'a> {
                     content_type,
                     ..
                 } => {
+                    // Browsers cannot decode WMF/EMF. Word documents often
+                    // embed scanned stamps/seals as an EMF that merely wraps
+                    // one bitmap — unwrap that to a BMP the browser can
+                    // show; skip anything else quietly rather than emit a
+                    // broken-image icon.
+                    let mut data = data.as_slice();
+                    let mut content_type = content_type.as_str();
+                    let unwrapped;
+                    if content_type.contains("emf") || content_type.contains("wmf") {
+                        match emf_wrapped_bitmap(data) {
+                            Some(bmp) => {
+                                unwrapped = bmp;
+                                data = &unwrapped;
+                                content_type = "image/bmp";
+                            }
+                            None => {
+                                self.warnings += 1;
+                                continue;
+                            }
+                        }
+                    }
+                    if data.is_empty() {
+                        self.warnings += 1;
+                        continue;
+                    }
                     let b64 = base64::engine::general_purpose::STANDARD.encode(data);
                     let _ = writeln!(
                         out,
@@ -1060,6 +1085,46 @@ pub fn render_page_svg(layout: &rdocx::WordLayoutResult, index: usize) -> Option
     let page = layout.layout.pages.get(index)?;
     let mut renderer = SvgRenderer::new(&layout.layout.fonts);
     Some(renderer.render_page(page))
+}
+
+/// If an EMF merely wraps a single bitmap (the usual shape of scanned
+/// stamps and seals embedded by Word), extract its DIB from the
+/// EMR_STRETCHDIBITS record and repackage it as a BMP file browsers can
+/// decode. Anything more complex (real vector metafiles) returns None.
+fn emf_wrapped_bitmap(data: &[u8]) -> Option<Vec<u8>> {
+    if data.len() < 88 || &data[40..44] != b" EMF" {
+        return None;
+    }
+    let u32_at = |p: usize| -> Option<usize> {
+        Some(u32::from_le_bytes(data.get(p..p + 4)?.try_into().ok()?) as usize)
+    };
+    let mut off = 0usize;
+    while off + 8 <= data.len() {
+        let rec_type = u32_at(off)?;
+        let rec_size = u32_at(off + 4)?;
+        if rec_size < 8 || off + rec_size > data.len() {
+            return None;
+        }
+        if rec_type == 81 {
+            // EMR_STRETCHDIBITS: BMI and bits offsets are record-relative.
+            let off_bmi = off + u32_at(off + 48)?;
+            let cb_bmi = u32_at(off + 52)?;
+            let off_bits = off + u32_at(off + 56)?;
+            let cb_bits = u32_at(off + 60)?;
+            let bmi = data.get(off_bmi..off_bmi + cb_bmi)?;
+            let bits = data.get(off_bits..off_bits + cb_bits)?;
+            let mut bmp = Vec::with_capacity(14 + bmi.len() + bits.len());
+            bmp.extend_from_slice(b"BM");
+            bmp.extend_from_slice(&((14 + bmi.len() + bits.len()) as u32).to_le_bytes());
+            bmp.extend_from_slice(&0u32.to_le_bytes());
+            bmp.extend_from_slice(&((14 + bmi.len()) as u32).to_le_bytes());
+            bmp.extend_from_slice(bmi);
+            bmp.extend_from_slice(bits);
+            return Some(bmp);
+        }
+        off += rec_size;
+    }
+    None
 }
 
 /// Resolution of rendered run segments to their source paragraphs, via the
@@ -2154,7 +2219,9 @@ fn apply_text_edit(p: &mut rdocx::Paragraph<'_>, edit: impl Fn(&str) -> Option<S
         return false;
     };
     if n == 0 {
-        p.add_run(&new_full);
+        // Text typed into an empty paragraph takes the paragraph mark's run
+        // properties (Word behavior) — form cells keep their designed size.
+        p.add_run_inheriting_mark(&new_full);
         return true;
     }
     // Diff against run boundaries: find the first run whose cumulative span
