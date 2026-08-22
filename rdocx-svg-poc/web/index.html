@@ -83,6 +83,7 @@
     applyZoom();
     drawCaret();
     drawSelection();
+    drawPreedit();
     report();
   }
 
@@ -169,6 +170,34 @@
       r.setAttribute("opacity", "0.28");
       r.setAttribute("class", "selrect");
       svg.appendChild(r);
+    }
+  }
+
+  // Underline the in-flight IME preedit, the visual convention for "not
+  // committed yet". Overlay-only: the document never carries the underline,
+  // so commit/cancel/undo need no formatting cleanup.
+  function drawPreedit() {
+    document.querySelectorAll(".preedit").forEach((n) => n.remove());
+    if (!comp || comp.len === 0 || !caret) return;
+    const from = comp.base, to = comp.base + comp.len;
+    for (const h of allHits()) {
+      if (h.para !== caret.para || h.start === null) continue;
+      const len = chars(h.text).length;
+      const k1 = Math.max(0, from - h.start);
+      const k2 = Math.min(len, to - h.start);
+      if (k2 <= k1) continue;
+      const svg = pagesEl.children[h.page - 1];
+      if (!svg) continue;
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      const y = h.y + 0.16 * h.size;
+      line.setAttribute("x1", h.x + cum(h, k1));
+      line.setAttribute("x2", h.x + cum(h, k2));
+      line.setAttribute("y1", y);
+      line.setAttribute("y2", y);
+      line.setAttribute("stroke", "#1a73e8");
+      line.setAttribute("stroke-width", 0.07 * h.size);
+      line.setAttribute("class", "preedit");
+      svg.appendChild(line);
     }
   }
 
@@ -416,6 +445,7 @@
     conv.end_composition();
     ime.value = "";
     ime.blur();
+    drawPreedit();
   }
 
   ime.addEventListener("compositionstart", () => {
@@ -431,6 +461,7 @@
     comp = null;
     ime.value = "";
     conv.end_composition();
+    drawPreedit();
   });
 
   // ---- load ----------------------------------------------------------------
