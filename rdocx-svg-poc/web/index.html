@@ -25,7 +25,7 @@
     <option value="2">200%</option>
   </select></label>
   <span id="status">loading wasm…</span>
-  <span id="hint">click: caret · drag: select · type/Enter/Backspace · Ctrl+B/I/U · Ctrl+Z/Y · Ctrl+C · 한글 IME</span>
+  <span id="hint">click: caret · drag: select · type/Enter/Backspace · Ctrl+B/I/U · Ctrl+Z/Y · Ctrl+C · Ctrl+Alt+F 각주 · 한글 IME</span>
 </header>
 <div id="pages"></div>
 <input id="ime" autocomplete="off" style="position:fixed; top:0; left:-9999px; width:100px; opacity:0">
@@ -416,6 +416,27 @@
     });
   }
 
+  function insertFootnote() {
+    if (!caret || !caret.path.startsWith("d/")) { report("각주는 본문에서만 삽입"); return; }
+    edit(() => {
+      const json = conv.insert_footnote(caret.path, caret.off);
+      const id = conv.last_note_id();
+      caret = id == null ? null : { path: `fn/${id}/0`, off: 0 };
+      sel = null;
+      return json;
+    });
+  }
+
+  function deleteFootnote() {
+    if (!caret || !caret.path.startsWith("fn/")) { report("각주 안에 캐럿을 두고 Ctrl+Alt+D"); return; }
+    edit(() => {
+      const json = conv.delete_footnote(caret.path);
+      caret = null;
+      sel = null;
+      return json;
+    });
+  }
+
   function doUndo() { edit(() => { const j = conv.undo(); caret = null; sel = null; return j; }); }
   function doRedo() { edit(() => { const j = conv.redo(); caret = null; sel = null; return j; }); }
 
@@ -426,6 +447,8 @@
     if (ctrl && key === "c") { e.preventDefault(); copySelection(); return; }
     if (ctrl && key === "z" && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
     if (ctrl && (key === "y" || (key === "z" && e.shiftKey))) { e.preventDefault(); doRedo(); return; }
+    if (ctrl && e.altKey && key === "f") { e.preventDefault(); insertFootnote(); return; }
+    if (ctrl && e.altKey && key === "d") { e.preventDefault(); deleteFootnote(); return; }
     if (ctrl && (key === "b" || key === "i" || key === "u")) { e.preventDefault(); toggleFmt(key); return; }
     if (ctrl || e.altKey) return;
     if (e.key.length === 1) {
@@ -521,6 +544,8 @@
     textAt: (p) => conv.paragraph_text_at(p),
     pathOrder: (p) => conv.path_order(p),
     saveDocx: () => conv.save_docx(),
+    insertFootnote,
+    deleteFootnote,
     loadBytes: (bytes) => {
       conv.load_docx(bytes);
       const t0 = performance.now();

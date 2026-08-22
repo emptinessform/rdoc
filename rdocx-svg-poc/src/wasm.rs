@@ -28,6 +28,8 @@ pub struct SvgConverter {
     /// the whole composition is one undo entry (pushed by
     /// `begin_composition`).
     composing: bool,
+    /// Id created by the most recent successful `insert_footnote`.
+    last_note_id: Option<i32>,
     cache: RenderCache,
 }
 
@@ -50,6 +52,7 @@ impl SvgConverter {
             undo: Vec::new(),
             redo: Vec::new(),
             composing: false,
+            last_note_id: None,
             cache: RenderCache::default(),
         }
     }
@@ -349,6 +352,48 @@ impl SvgConverter {
             return Err(err("not an editable location"));
         };
         self.mutate(move |d| toggle_at(d, &at, start, end, fmt), "toggle")
+    }
+
+    /// Insert a new empty footnote referenced at (Document-story path,
+    /// char offset). One history entry; the new note id is readable via
+    /// `last_note_id` until the next insertion.
+    pub fn insert_footnote(&mut self, path: &str, offset: usize) -> Result<String, JsValue> {
+        let Some(children) = parse_doc_path(path) else {
+            return Err(err("footnotes can only be referenced from the document body"));
+        };
+        let created = std::rc::Rc::new(std::cell::Cell::new(None));
+        let seen = created.clone();
+        let out = self.mutate(
+            move |d| match d.insert_footnote_ref_at(&children, offset) {
+                Some(id) => {
+                    seen.set(Some(id));
+                    true
+                }
+                None => false,
+            },
+            "insert footnote",
+        )?;
+        self.last_note_id = created.get();
+        Ok(out)
+    }
+
+    /// The id created by the most recent successful `insert_footnote`.
+    pub fn last_note_id(&self) -> Option<i32> {
+        self.last_note_id
+    }
+
+    /// Delete the footnote a hit path points into, along with every
+    /// reference marker in the body. One history entry.
+    pub fn delete_footnote(&mut self, path: &str) -> Result<String, JsValue> {
+        let Some(crate::EditPath::Note {
+            is_footnote: true,
+            id,
+            ..
+        }) = parse_edit_path(path)
+        else {
+            return Err(err("not a footnote location"));
+        };
+        self.mutate(move |d| d.remove_footnote(id), "delete footnote")
     }
 
     /// paragraphs()-order index of a body hit path, for caret arithmetic
