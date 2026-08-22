@@ -364,8 +364,8 @@
     const r = selRange();
     if (!r) return;
     edit(() => {
-      conv.delete_selection(r.pa, r.oa, r.pb, r.ob);
-      const json = conv.insert(r.pa, r.oa, s);
+      // One wasm call = one undo entry for the whole replacement.
+      const json = conv.replace_selection(r.pa, r.oa, r.pb, r.ob, s);
       caret = { path: r.pa, off: r.oa + chars(s).length };
       sel = null;
       return json;
@@ -506,6 +506,13 @@
     paraTexts: () => conv.paragraph_texts(),
     textAt: (p) => conv.paragraph_text_at(p),
     pathOrder: (p) => conv.path_order(p),
+    saveDocx: () => conv.save_docx(),
+    loadBytes: (bytes) => {
+      conv.load_docx(bytes);
+      const t0 = performance.now();
+      caret = null; sel = null;
+      apply(conv.render(), performance.now() - t0);
+    },
     simIme: (steps) => {
       ime.focus();
       ime.dispatchEvent(new CompositionEvent("compositionstart"));

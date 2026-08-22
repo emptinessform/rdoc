@@ -215,6 +215,52 @@ impl SvgConverter {
         )
     }
 
+    /// Replace a selection with text as one history entry (typing over a
+    /// selection). Within one paragraph any range works; across paragraphs
+    /// both ends must be body paragraphs.
+    pub fn replace_selection(
+        &mut self,
+        pa: &str,
+        oa: usize,
+        pb: &str,
+        ob: usize,
+        text: &str,
+    ) -> Result<String, JsValue> {
+        let text = text.to_owned();
+        if pa == pb {
+            let Some(at) = parse_edit_path(pa) else {
+                return Err(err("not an editable location"));
+            };
+            let (lo, hi) = (oa.min(ob), oa.max(ob));
+            return self.mutate(
+                move |d| {
+                    delete_range_at(d, &at, lo, hi)
+                        && (text.is_empty() || insert_text_at(d, &at, lo, &text))
+                },
+                "replace selection",
+            );
+        }
+        let (Some(ca), Some(cb)) = (parse_doc_path(pa), parse_doc_path(pb)) else {
+            return Err(err("not an editable location"));
+        };
+        if ca.len() != 1 || cb.len() != 1 {
+            return Err(err(
+                "selection edits across table cells are not supported yet",
+            ));
+        }
+        self.mutate(
+            move |d| {
+                let (Some(a), Some(b)) = (body_order_of(d, ca[0]), body_order_of(d, cb[0]))
+                else {
+                    return false;
+                };
+                delete_range(d, a, oa, b, ob)
+                    && (text.is_empty() || insert_text_at(d, &crate::EditPath::Doc(ca.clone()), oa, &text))
+            },
+            "replace selection",
+        )
+    }
+
     /// Replace [start, end) in one paragraph with text (IME composition).
     pub fn replace_range(
         &mut self,
