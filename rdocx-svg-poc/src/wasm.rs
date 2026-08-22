@@ -412,6 +412,29 @@ impl SvgConverter {
         self.mutate(move |d| crate::split_at(d, &at, offset), "split")
     }
 
+    /// Table structure ops keyed by the caret's cell path ("d/T.r.c.p",
+    /// top-level tables only): 'r' inserts a row below, 'R' deletes the
+    /// row, 'c' inserts a column to the right, 'C' deletes the column.
+    pub fn table_op(&mut self, path: &str, op: char) -> Result<String, JsValue> {
+        let Some(crate::EditPath::Doc(ch)) = parse_edit_path(path) else {
+            return Err(err("not a table cell"));
+        };
+        if ch.len() != 4 {
+            return Err(err("caret is not in a top-level table cell"));
+        }
+        let (t, r, c) = (ch[0], ch[1], ch[2]);
+        self.mutate(
+            move |d| match op {
+                'r' => d.table_insert_row(t, r),
+                'R' => d.table_delete_row(t, r),
+                'c' => d.table_insert_column(t, c),
+                'C' => d.table_delete_column(t, c),
+                _ => false,
+            },
+            "table op",
+        )
+    }
+
     /// Set paragraph alignment ('l' | 'c' | 'r' | 'j') for every path in
     /// the JSON string array, as one history entry (a selection can span
     /// several paragraphs).

@@ -42,6 +42,12 @@
     <button data-align="c" title="가운데 정렬 (Ctrl+E)">⬌</button>
     <button data-align="r" title="오른쪽 정렬 (Ctrl+R)">⮞</button>
   </span>
+  <span id="tblbtns" title="표: 캐럿 셀 기준">
+    <button data-op="r" title="아래에 행 추가">행+</button>
+    <button data-op="R" title="행 삭제">행−</button>
+    <button data-op="c" title="오른쪽에 열 추가">열+</button>
+    <button data-op="C" title="열 삭제">열−</button>
+  </span>
   <span id="findbar" hidden>
     <input id="findq" placeholder="찾기" autocomplete="off" size="14">
     <span id="findcount"></span>
@@ -665,6 +671,24 @@
     fontsizeEl.blur();
   });
   fontsizeEl.addEventListener("keydown", (e) => e.stopPropagation());
+
+  // Table structure ops act on the caret's cell (top-level tables).
+  function tableOp(op) {
+    if (!caret || !/^d\/\d+\.\d+\.\d+\.\d+$/.test(caret.path)) {
+      report("표 셀에 캐럿을 두세요");
+      return;
+    }
+    const keep = { ...caret };
+    edit(() => {
+      const json = conv.table_op(keep.path, op);
+      caret = op === "R" || op === "C" ? null : keep;
+      sel = null;
+      return json;
+    });
+  }
+  document.querySelectorAll("#tblbtns button").forEach((b) => {
+    b.onclick = () => tableOp(b.dataset.op);
+  });
 
   // Cut = copy, then the ordinary selection deletion (one history entry).
   function cutSelection() {
@@ -1431,6 +1455,7 @@
     replaceAllWith: (q) => { replq.value = q; replaceAll(); },
     paste: doPaste,
     align: alignSelection,
+    tableOp,
     fontSize: applyFontSize,
     fmtOn: (ranges, f) => conv.ranges_format_on(JSON.stringify(ranges), f),
     thumbs: () => ({
