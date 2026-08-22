@@ -273,7 +273,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 [[package]]
 name = "oxml-chart"
 version = "0.4.0"
-source = "git+https://github.com/emptinessform/rdocx?rev=c45e271ce43da3699e594548d8ba734727cd006a#c45e271ce43da3699e594548d8ba734727cd006a"
+source = "git+https://github.com/emptinessform/rdocx?rev=c894b8029c99e841aee9617f096844aa20c0a54e#c894b8029c99e841aee9617f096844aa20c0a54e"
 dependencies = [
  "oxml-core",
  "oxml-drawing",
@@ -285,7 +285,7 @@ dependencies = [
 [[package]]
 name = "oxml-core"
 version = "0.4.0"
-source = "git+https://github.com/emptinessform/rdocx?rev=c45e271ce43da3699e594548d8ba734727cd006a#c45e271ce43da3699e594548d8ba734727cd006a"
+source = "git+https://github.com/emptinessform/rdocx?rev=c894b8029c99e841aee9617f096844aa20c0a54e#c894b8029c99e841aee9617f096844aa20c0a54e"
 dependencies = [
  "quick-xml",
  "thiserror",
@@ -294,7 +294,7 @@ dependencies = [
 [[package]]
 name = "oxml-drawing"
 version = "0.4.0"
-source = "git+https://github.com/emptinessform/rdocx?rev=c45e271ce43da3699e594548d8ba734727cd006a#c45e271ce43da3699e594548d8ba734727cd006a"
+source = "git+https://github.com/emptinessform/rdocx?rev=c894b8029c99e841aee9617f096844aa20c0a54e#c894b8029c99e841aee9617f096844aa20c0a54e"
 dependencies = [
  "oxml-core",
  "quick-xml",
@@ -303,7 +303,7 @@ dependencies = [
 [[package]]
 name = "oxml-layout"
 version = "0.4.0"
-source = "git+https://github.com/emptinessform/rdocx?rev=c45e271ce43da3699e594548d8ba734727cd006a#c45e271ce43da3699e594548d8ba734727cd006a"
+source = "git+https://github.com/emptinessform/rdocx?rev=c894b8029c99e841aee9617f096844aa20c0a54e#c894b8029c99e841aee9617f096844aa20c0a54e"
 dependencies = [
  "fontdb",
  "harfrust",
@@ -315,12 +315,12 @@ dependencies = [
 [[package]]
 name = "oxml-media"
 version = "0.4.0"
-source = "git+https://github.com/emptinessform/rdocx?rev=c45e271ce43da3699e594548d8ba734727cd006a#c45e271ce43da3699e594548d8ba734727cd006a"
+source = "git+https://github.com/emptinessform/rdocx?rev=c894b8029c99e841aee9617f096844aa20c0a54e#c894b8029c99e841aee9617f096844aa20c0a54e"
 
 [[package]]
 name = "oxml-opc"
 version = "0.4.0"
-source = "git+https://github.com/emptinessform/rdocx?rev=c45e271ce43da3699e594548d8ba734727cd006a#c45e271ce43da3699e594548d8ba734727cd006a"
+source = "git+https://github.com/emptinessform/rdocx?rev=c894b8029c99e841aee9617f096844aa20c0a54e#c894b8029c99e841aee9617f096844aa20c0a54e"
 dependencies = [
  "quick-xml",
  "thiserror",
@@ -330,7 +330,7 @@ dependencies = [
 [[package]]
 name = "oxml-pdf"
 version = "0.4.0"
-source = "git+https://github.com/emptinessform/rdocx?rev=c45e271ce43da3699e594548d8ba734727cd006a#c45e271ce43da3699e594548d8ba734727cd006a"
+source = "git+https://github.com/emptinessform/rdocx?rev=c894b8029c99e841aee9617f096844aa20c0a54e#c894b8029c99e841aee9617f096844aa20c0a54e"
 dependencies = [
  "miniz_oxide 0.9.1",
  "oxml-layout",
@@ -345,7 +345,7 @@ dependencies = [
 [[package]]
 name = "oxml-sml"
 version = "0.4.0"
-source = "git+https://github.com/emptinessform/rdocx?rev=c45e271ce43da3699e594548d8ba734727cd006a#c45e271ce43da3699e594548d8ba734727cd006a"
+source = "git+https://github.com/emptinessform/rdocx?rev=c894b8029c99e841aee9617f096844aa20c0a54e#c894b8029c99e841aee9617f096844aa20c0a54e"
 dependencies = [
  "oxml-opc",
  "quick-xml",
@@ -416,7 +416,7 @@ dependencies = [
 [[package]]
 name = "rdocx"
 version = "0.8.0"
-source = "git+https://github.com/emptinessform/rdocx?rev=c45e271ce43da3699e594548d8ba734727cd006a#c45e271ce43da3699e594548d8ba734727cd006a"
+source = "git+https://github.com/emptinessform/rdocx?rev=c894b8029c99e841aee9617f096844aa20c0a54e#c894b8029c99e841aee9617f096844aa20c0a54e"
 dependencies = [
  "oxml-chart",
  "oxml-core",
@@ -438,7 +438,7 @@ dependencies = [
 [[package]]
 name = "rdocx-html"
 version = "0.8.0"
-source = "git+https://github.com/emptinessform/rdocx?rev=c45e271ce43da3699e594548d8ba734727cd006a#c45e271ce43da3699e594548d8ba734727cd006a"
+source = "git+https://github.com/emptinessform/rdocx?rev=c894b8029c99e841aee9617f096844aa20c0a54e#c894b8029c99e841aee9617f096844aa20c0a54e"
 dependencies = [
  "rdocx-oxml",
 ]
@@ -446,7 +446,7 @@ dependencies = [
 [[package]]
 name = "rdocx-layout"
 version = "0.8.0"
-source = "git+https://github.com/emptinessform/rdocx?rev=c45e271ce43da3699e594548d8ba734727cd006a#c45e271ce43da3699e594548d8ba734727cd006a"
+source = "git+https://github.com/emptinessform/rdocx?rev=c894b8029c99e841aee9617f096844aa20c0a54e#c894b8029c99e841aee9617f096844aa20c0a54e"
 dependencies = [
  "oxml-chart",
  "oxml-drawing",
@@ -458,7 +458,7 @@ dependencies = [
 [[package]]
 name = "rdocx-oxml"
 version = "0.8.0"
-source = "git+https://github.com/emptinessform/rdocx?rev=c45e271ce43da3699e594548d8ba734727cd006a#c45e271ce43da3699e594548d8ba734727cd006a"
+source = "git+https://github.com/emptinessform/rdocx?rev=c894b8029c99e841aee9617f096844aa20c0a54e#c894b8029c99e841aee9617f096844aa20c0a54e"
 dependencies = [
  "itoa",
  "oxml-core",

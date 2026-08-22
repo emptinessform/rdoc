@@ -292,12 +292,7 @@
       report(`segment ${JSON.stringify(h.text)} is decorative (marker/field) — not editable`);
       return;
     }
-    if (!/^(d|h|f)\//.test(h.path)) {
-      caret = null;
-      drawCaret();
-      report(`${h.path}: footnote editing is a later stage`);
-      return;
-    }
+
     caret = { path: h.path, off: h.start + k };
     drawCaret();
     report();
@@ -312,15 +307,14 @@
     if (!sel) return null;
     const A = getRun(sel.a), B = getRun(sel.b);
     if (!A || !B || A.path === null || B.path === null) return null;
-    const editable = (p) => /^(d|h|f)\//.test(p);
-    if (!editable(A.path) || !editable(B.path)) return null;
+
     let pa = A.path, oa = A.start + sel.a.k, pb = B.path, ob = B.start + sel.b.k;
     if (pa === pb) {
       if (ob < oa) [oa, ob] = [ob, oa];
       return { pa, oa, pb, ob };
     }
     // Cross-paragraph ranges are body-only; order by body index.
-    const bodyIdx = (p) => (p.includes(".") ? null : +p.slice(2));
+    const bodyIdx = (p) => (p.startsWith("d/") && !p.includes(".") ? +p.slice(2) : null);
     const ia = bodyIdx(pa), ib = bodyIdx(pb);
     if (ia === null || ib === null) return null;
     if (ib < ia) [pa, oa, pb, ob] = [pb, ob, pa, oa];

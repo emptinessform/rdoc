@@ -66,6 +66,10 @@ pub fn build_demo_doc() -> Document {
 
     doc.add_paragraph("한글 조판 테스트 — 서버 없이 브라우저에서 그대로 보이는 문서입니다. 글리프가 벡터 패스로 내장되어 뷰어 쪽 폰트와 무관하게 동일하게 렌더링됩니다.");
 
+    let note_id = doc.add_footnote("각주 내용도 이제 편집됩니다 — 클릭해서 고쳐 보세요.");
+    let mut p = doc.add_paragraph("이 문장에는 각주가 달려 있습니다");
+    p.add_footnote_ref(note_id);
+
     doc.add_paragraph("Layout features exercised below: a bulleted list and a bordered table with header shading.");
 
     doc.add_bullet_list_item("Glyph outlines extracted with ttf-parser", 0);
@@ -1059,13 +1063,29 @@ pub enum EditPath {
         rel_id: String,
         para: usize,
     },
+    Note {
+        is_footnote: bool,
+        id: i32,
+        para: usize,
+    },
 }
 
-/// Parse any editable hit path ("d/…", "h/rId3/0", "f/rId4/0"). Footnote
-/// and endnote stories return None: not editable yet.
+/// Parse any editable hit path ("d/…", "h/rId3/0", "f/rId4/0", "fn/2/0",
+/// "en/3/0").
 pub fn parse_edit_path(path: &str) -> Option<EditPath> {
     if let Some(children) = parse_doc_path(path) {
         return Some(EditPath::Doc(children));
+    }
+    if let Some(rest) = path.strip_prefix("fn/").map(|r| (true, r)).or_else(|| {
+        path.strip_prefix("en/").map(|r| (false, r))
+    }) {
+        let (is_footnote, rest) = rest;
+        let (id, para) = rest.rsplit_once('/')?;
+        return Some(EditPath::Note {
+            is_footnote,
+            id: id.parse().ok()?,
+            para: para.parse().ok()?,
+        });
     }
     let (is_header, rest) = if let Some(rest) = path.strip_prefix("h/") {
         (true, rest)
@@ -1100,6 +1120,20 @@ pub fn edit_text_at(doc: &mut Document, at: &EditPath, edit: impl Fn(&str) -> Op
                 apply_text_edit(&mut p, edit)
             })
             .unwrap_or(false),
+        EditPath::Note {
+            is_footnote: true,
+            id,
+            para,
+        } => doc
+            .with_footnote_paragraph_mut(*id, *para, |mut p| apply_text_edit(&mut p, edit))
+            .unwrap_or(false),
+        EditPath::Note {
+            is_footnote: false,
+            id,
+            para,
+        } => doc
+            .with_endnote_paragraph_mut(*id, *para, |mut p| apply_text_edit(&mut p, edit))
+            .unwrap_or(false),
     }
 }
 
@@ -1116,6 +1150,20 @@ pub fn delete_range_at(doc: &mut Document, at: &EditPath, start: usize, end: usi
                 delete_range_in(&mut p, start, end)
             })
             .unwrap_or(false),
+        EditPath::Note {
+            is_footnote: true,
+            id,
+            para,
+        } => doc
+            .with_footnote_paragraph_mut(*id, *para, |mut p| delete_range_in(&mut p, start, end))
+            .unwrap_or(false),
+        EditPath::Note {
+            is_footnote: false,
+            id,
+            para,
+        } => doc
+            .with_endnote_paragraph_mut(*id, *para, |mut p| delete_range_in(&mut p, start, end))
+            .unwrap_or(false),
     }
 }
 
@@ -1131,6 +1179,20 @@ pub fn toggle_at(doc: &mut Document, at: &EditPath, start: usize, end: usize, fm
             .with_header_footer_paragraph_mut(*is_header, rel_id, *para, |mut p| {
                 toggle_in(&mut p, start, end, fmt)
             })
+            .unwrap_or(false),
+        EditPath::Note {
+            is_footnote: true,
+            id,
+            para,
+        } => doc
+            .with_footnote_paragraph_mut(*id, *para, |mut p| toggle_in(&mut p, start, end, fmt))
+            .unwrap_or(false),
+        EditPath::Note {
+            is_footnote: false,
+            id,
+            para,
+        } => doc
+            .with_endnote_paragraph_mut(*id, *para, |mut p| toggle_in(&mut p, start, end, fmt))
             .unwrap_or(false),
     }
 }
@@ -1175,6 +1237,16 @@ pub fn text_at(doc: &Document, at: &EditPath) -> Option<String> {
             rel_id,
             para,
         } => doc.header_footer_paragraph_text(*is_header, rel_id, *para),
+        EditPath::Note {
+            is_footnote: true,
+            id,
+            para,
+        } => doc.footnote_paragraph_text(*id, *para),
+        EditPath::Note {
+            is_footnote: false,
+            id,
+            para,
+        } => doc.endnote_paragraph_text(*id, *para),
     }
 }
 
