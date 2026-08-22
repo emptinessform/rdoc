@@ -89,3 +89,39 @@ S8 백로그의 마지막 UX 소품. 전부 index.html JS만.
   미주에서 ↑ = en/ 유지, 드래그 하단 가장자리 고정 600ms에 scrollY
   756→1080 + 선택 성장.
 - 회귀 그린: ux2 / ux3 / shift / cellsel / ime.
+
+---
+
+# S10-3: 선택 안 노트 마커 삭제 (Word 동작)
+
+## 목표·범위
+
+선택 삭제/치환이 각주·미주 **참조 마커**를 덮으면 노트째 삭제한다
+(Word 동작). S10-1의 알려진 근사 해소.
+
+## 구현 (포크 a9f10ee + rdoc)
+
+- 포크: `Paragraph::note_refs() -> Vec<(is_footnote, id, char_pos)>` —
+  참조 런 앞의 텍스트 문자 수로 위치 열거 (런 단위 근사).
+- lib.rs: `covered_note_refs(doc, at, after, before)`(배타 경계, 본문
+  스토리만), `remove_notes`. `delete_range_across`가 머리(pos>oa)/중간
+  (전부)/꼬리(pos<ob) 참조를 수집·중복 제거 후 **텍스트 삭제 전에** 노트
+  제거 (참조 런은 텍스트가 없어 문자 오프셋 불변 — 순서 무관).
+- wasm: 같은 문단 delete/replace_selection, scatter delete/replace_ranges
+  모두 동일 수집(strict 내부: start < pos < end) 후 노트 제거.
+- 경계 규칙: 오프셋 공간에서 마커는 폭 0이라 "선택 시작/끝과 정확히 같은
+  위치"는 마커가 선택 안인지 밖인지 구별 불가 → 보수적으로 배타(마커
+  유지). 문단 꼬리를 지나 다음 문단으로 이어지는 선택(across 머리)은
+  문단 끝 마커 포함.
+
+## 검증 (실측)
+
+- 네이티브 단위 테스트 `deletion_range_covering_note_ref_removes_note`:
+  내부 커버 감지/경계 배타, across 삭제로 각주+미주 동시 소거, 왕복.
+- notesel-test.js 그린: d/4[2..]→d/5[..3] 선택 삭제 = 병합 텍스트 정확,
+  **각주(마커가 범위 안) 소거 + 미주(마커가 범위 밖) 생존**, undo 1회
+  복원. 문단 중간 마커를 덮어 타이핑 = 텍스트 치환 + 노트 소거, undo
+  복원. 첫 실행 실패는 테스트 좌표 산술(한글 히트가 음절 세그먼트로
+  분할)이었고 기능은 정상 — 오프셋 커버 세그먼트 기반 xAt로 수정.
+- 회귀 그린: cellsel / en / noteops / enops / shift / ime / roundtrip.
+- 포크 rev a9f10ee 고정, 네이티브 릴리스 빌드 확인.

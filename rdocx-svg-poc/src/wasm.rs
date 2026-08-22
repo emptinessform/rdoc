@@ -9,8 +9,9 @@
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    HitRun, RenderCache, body_order_of, delete_char_at, delete_range_across, delete_range_at,
-    insert_text_at, parse_doc_path, parse_edit_path, render_delta, text_at, toggle_at,
+    HitRun, RenderCache, body_order_of, covered_note_refs, delete_char_at, delete_range_across,
+    delete_range_at, insert_text_at, parse_doc_path, parse_edit_path, remove_notes, render_delta,
+    text_at, toggle_at,
 };
 
 const UNDO_CAP: usize = 100;
@@ -200,8 +201,12 @@ impl SvgConverter {
             let Some(at) = parse_edit_path(pa) else {
                 return Err(err("not an editable location"));
             };
+            let (lo, hi) = (oa.min(ob), oa.max(ob));
             return self.mutate(
-                move |d| delete_range_at(d, &at, oa.min(ob), oa.max(ob)),
+                move |d| {
+                    let doomed = covered_note_refs(d, &at, Some(lo), Some(hi));
+                    remove_notes(d, &doomed) && delete_range_at(d, &at, lo, hi)
+                },
                 "delete range",
             );
         }
@@ -233,7 +238,9 @@ impl SvgConverter {
             let (lo, hi) = (oa.min(ob), oa.max(ob));
             return self.mutate(
                 move |d| {
-                    delete_range_at(d, &at, lo, hi)
+                    let doomed = covered_note_refs(d, &at, Some(lo), Some(hi));
+                    remove_notes(d, &doomed)
+                        && delete_range_at(d, &at, lo, hi)
                         && (text.is_empty() || insert_text_at(d, &at, lo, &text))
                 },
                 "replace selection",
@@ -275,9 +282,29 @@ impl SvgConverter {
     pub fn delete_ranges(&mut self, json: &str) -> Result<String, JsValue> {
         let ranges = Self::parse_ranges(json)?;
         self.mutate(
-            move |d| ranges.iter().all(|(at, s, e)| delete_range_at(d, at, *s, *e)),
+            move |d| {
+                Self::remove_ranges_notes(d, &ranges)
+                    && ranges.iter().all(|(at, s, e)| delete_range_at(d, at, *s, *e))
+            },
             "delete ranges",
         )
+    }
+
+    /// Remove the notes whose reference markers fall strictly inside any of
+    /// the given ranges (shared by the scattered delete/replace ops).
+    fn remove_ranges_notes(
+        d: &mut rdocx::Document,
+        ranges: &[(crate::EditPath, usize, usize)],
+    ) -> bool {
+        let mut doomed: Vec<(bool, i32)> = Vec::new();
+        for (at, s, e) in ranges {
+            for x in covered_note_refs(d, at, Some(*s), Some(*e)) {
+                if !doomed.contains(&x) {
+                    doomed.push(x);
+                }
+            }
+        }
+        remove_notes(d, &doomed)
     }
 
     /// `delete_ranges` plus one insertion at the first range's start (typing
@@ -287,7 +314,8 @@ impl SvgConverter {
         let text = text.to_owned();
         self.mutate(
             move |d| {
-                ranges.iter().all(|(at, s, e)| delete_range_at(d, at, *s, *e))
+                Self::remove_ranges_notes(d, &ranges)
+                    && ranges.iter().all(|(at, s, e)| delete_range_at(d, at, *s, *e))
                     && (text.is_empty() || {
                         let (at, s, _) = &ranges[0];
                         insert_text_at(d, at, *s, &text)

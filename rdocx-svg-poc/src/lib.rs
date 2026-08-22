@@ -673,6 +673,31 @@ mod edit_tests {
     }
 
     #[test]
+    fn deletion_range_covering_note_ref_removes_note() {
+        let mut doc = Document::new();
+        doc.add_paragraph("가나다라");
+        doc.add_paragraph("마바사아");
+        let fn_id = doc.insert_footnote_ref_at(&[0], 2).expect("footnote ref");
+        let at0 = EditPath::Doc(vec![0]);
+
+        // Interior coverage finds the reference; boundary-exclusive misses.
+        assert_eq!(
+            covered_note_refs(&mut doc, &at0, Some(1), Some(3)),
+            vec![(true, fn_id)]
+        );
+        assert!(covered_note_refs(&mut doc, &at0, Some(2), Some(3)).is_empty());
+
+        // Cross-paragraph deletion spanning the marker removes the note.
+        let en_id = doc.insert_endnote_ref_at(&[0], 4).expect("endnote ref");
+        let at1 = EditPath::Doc(vec![1]);
+        assert!(delete_range_across(&mut doc, &at0, 1, &at1, 1));
+        assert_eq!(&texts(&doc)[0], "가바사아");
+        assert_eq!(doc.footnote_paragraph_text(fn_id, 0), None, "footnote gone");
+        assert_eq!(doc.endnote_paragraph_text(en_id, 0), None, "endnote gone");
+        roundtrip(&mut doc);
+    }
+
+    #[test]
     fn insert_then_delete_restores_text() {
         let mut doc = build_demo_doc();
         let before = texts(&doc);
@@ -1627,6 +1652,44 @@ pub fn merge_at(doc: &mut Document, at: &EditPath) -> bool {
     }
 }
 
+/// Note references (footnote/endnote) that a deletion range covers in the
+/// paragraph at a Document-story path, as `(is_footnote, id)`. `after` and
+/// `before` bound the reference's char position exclusively on either side
+/// (None = unbounded). Non-body stories cannot carry references.
+pub fn covered_note_refs(
+    doc: &mut Document,
+    at: &EditPath,
+    after: Option<usize>,
+    before: Option<usize>,
+) -> Vec<(bool, i32)> {
+    let EditPath::Doc(children) = at else {
+        return Vec::new();
+    };
+    let Some(p) = doc.paragraph_at_path_mut(children) else {
+        return Vec::new();
+    };
+    p.note_refs()
+        .into_iter()
+        .filter(|(_, _, pos)| {
+            after.map_or(true, |a| *pos > a) && before.map_or(true, |b| *pos < b)
+        })
+        .map(|(is_footnote, id, _)| (is_footnote, id))
+        .collect()
+}
+
+/// Remove the given notes along with every reference marker pointing at
+/// them (Word deletes the note when its reference is inside a deleted
+/// selection). Ids are expected deduplicated.
+pub fn remove_notes(doc: &mut Document, notes: &[(bool, i32)]) -> bool {
+    notes.iter().all(|(is_footnote, id)| {
+        if *is_footnote {
+            doc.remove_footnote(*id)
+        } else {
+            doc.remove_endnote(*id)
+        }
+    })
+}
+
 /// Word-style deletion across sibling paragraphs of one container (body,
 /// table cell, header/footer, footnote, endnote): trim the head paragraph's
 /// tail and the tail paragraph's head, clear fully covered middles, then
@@ -1643,6 +1706,27 @@ pub fn delete_range_across(
     let (ka, ia) = sibling_locus(at_a);
     let (kb, ib) = sibling_locus(at_b);
     if ka != kb || ib <= ia {
+        return false;
+    }
+    // Notes whose reference marker falls inside the range go first (their
+    // reference runs carry no text, so char offsets are unaffected).
+    let mut doomed: Vec<(bool, i32)> = Vec::new();
+    let mut collect = |v: Vec<(bool, i32)>, doomed: &mut Vec<(bool, i32)>| {
+        for x in v {
+            if !doomed.contains(&x) {
+                doomed.push(x);
+            }
+        }
+    };
+    collect(covered_note_refs(doc, at_a, Some(oa), None), &mut doomed);
+    for i in ia + 1..ib {
+        collect(
+            covered_note_refs(doc, &at_sibling(at_a, i), None, None),
+            &mut doomed,
+        );
+    }
+    collect(covered_note_refs(doc, at_b, None, Some(ob)), &mut doomed);
+    if !remove_notes(doc, &doomed) {
         return false;
     }
     let Some(len_a) = text_at(doc, at_a).map(|t| t.chars().count()) else {
