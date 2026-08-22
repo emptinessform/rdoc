@@ -11,21 +11,37 @@ DOCX에서 재현하는 프로젝트입니다. 차이점: DOCX는 파서·레이
 
 - 기존 브라우저 DOCX 편집기는 서버가 필요하거나(OnlyOffice, Collabora),
   wasm이어도 거대합니다(ZetaOffice ~1GB). 이 프로젝트의 wasm은 현재
-  **10.4MB (gzip 4.8MB)** 입니다.
+  **10.9MB (gzip 5.0MB)** 입니다.
 - 결과물 SVG는 글리프가 벡터 패스로 내장된 자기완결 문서 —
   뷰어에 폰트가 없어도 동일하게 렌더링됩니다 (1페이지 gzip ~40KB).
 - 한국어 조판(폰트 폴백·셰이핑)을 1급 요구사항으로 다룹니다.
 
-## 현재 상태 (PoC 3단계 완료, 2026-08-21)
+## 현재 상태 (2026-08-22)
 
-| 단계 | 내용 | 검증 결과 |
-|---|---|---|
-| PoC 1 | rdocx 레이아웃 출력 → SVG 렌더러 (네이티브) | rdocx PNG 백엔드와 시각적 일치, 한국어 셰이핑 포함 |
-| PoC 2 | wasm 빌드: 브라우저에서 docx 파싱→조판→SVG | 데모 92.6ms, .docx 파일 36.6ms |
-| PoC 3 | 히트테스팅 + 편집 루프 (클릭→커서→타이핑→재조판) | 키 입력당 21~27ms, 한국어 삽입·줄바꿈 재계산 확인 |
+브라우저에서 도는 편집기가 상당한 완성도에 도달했습니다:
 
-코드는 [`rdocx-svg-poc/`](rdocx-svg-poc/), 상세 기록은
-[`docs/worklog/`](docs/worklog/)에 있습니다.
+- **편집**: 6개 스토리 전부(본문·표 셀·머리글·꼬리글·각주·미주) 타이핑,
+  한글 IME(조합 = undo 1단위), Enter/병합, 각주·미주 삽입/삭제
+- **선택 편집 (Word 의미론)**: 같은 문단 / 여러 문단 / 셀 간 / 표를
+  가로지르는 선택의 삭제·치환, 선택에 덮인 노트는 노트째 삭제
+- **클립보드**: 복사·잘라내기·붙여넣기(멀티라인 = 문단 분할, undo 1회),
+  클립보드 이미지 붙여넣기
+- **찾기/바꾸기**: Ctrl+F/H, 전 스토리, 모두 바꾸기 = undo 1회
+- **서식**: B/I/U·문단 정렬·글자 크기·문단 스타일 — 임의 선택 모양에서
+  각각 undo 1회
+- **표 구조**: 행/열 추가·삭제 (서식 상속, tblGrid 동기)
+- **이미지**: 캐럿 위치 인라인 삽입 (파일/클립보드)
+- **뷰어**: 페이지 썸네일 패널, 지연 페이지 렌더(가시 페이지 우선),
+  .docx 저장/열기 왕복
+
+**성능** (63페이지 문서): 키 입력당 네이티브 min 23ms(게이트 <30ms),
+브라우저 min ~70ms · 1/63페이지만 재렌더. 구조 연산(Enter 등)은 브라우저
+~211ms + 화면 밖 페이지 idle 렌더.
+
+코드는 [`rdocx-svg-poc/`](rdocx-svg-poc/), 브라우저 테스트 스위트 30종은
+[`rdocx-svg-poc/web/tests/`](rdocx-svg-poc/web/tests/), 상세 기록은
+[`docs/worklog/`](docs/worklog/), 과정에서 나온 지식 정리는
+[`docs/knowledge.html`](docs/knowledge.html)에 있습니다.
 
 ## 실행
 
@@ -43,13 +59,17 @@ cd web && python -m http.server 8741   # → http://localhost:8741
 
 ## 업스트림 관계
 
-rdocx에 두 가지를 제안/보고했고, 수용될 때까지
-[포크 브랜치](https://github.com/emptinessform/rdocx/tree/svg-poc)를 의존합니다:
+제안 다수가 rdocx **v0.8.0**에 수용·크레딧됐고(F-X032 layout API,
+F-X037 소스 맵, F-X038 문단 캐시), 현재는 v0.8.0 위에 리뷰 경계별 커밋을
+쌓은 [포크 브랜치 svg-poc-0.8](https://github.com/emptinessform/rdocx/tree/svg-poc-0.8)을
+rev 고정으로 의존합니다:
 
-- [tensorbee/rdocx#37](https://github.com/tensorbee/rdocx/issues/37) —
-  `Document::layout()` / `layout_with_fonts()` 공개 API 제안 (패치 보유, PR 의사 전달)
+- [tensorbee/rdocx#40](https://github.com/tensorbee/rdocx/pull/40) —
+  F-X039 후보: `Arc` 페이로드 공유 (드래프트 PR, 리뷰 대기)
+- [tensorbee/rdocx#41](https://github.com/tensorbee/rdocx/pull/41) —
+  F-X040 후보: 재시작 가능한 페이지네이션 + 표/머리글 캐시 (드래프트 PR)
 - [tensorbee/rdocx#23](https://github.com/tensorbee/rdocx/issues/23) —
-  글리프 중복 버그에 진단 코멘트 (줄바꿈 후보 지점과의 상관관계 + 최소 재현)
+  글리프 중복 진단 → 업스트림 F-X041로 편성 (SVG 백엔드 재검증 협조 예정)
 
 ## 로드맵
 
