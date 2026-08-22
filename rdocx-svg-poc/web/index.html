@@ -112,19 +112,21 @@
     return { hit: best, k };
   }
 
-  function caretVis() {
-    if (!caret) return null;
+  function visFor(pos) {
+    if (!pos) return null;
     let best = null;
     for (const h of allHits()) {
-      if (h.path !== caret.path || h.start === null) continue;
+      if (h.path !== pos.path || h.start === null) continue;
       const len = chars(h.text).length;
-      if (caret.off >= h.start && caret.off <= h.start + len) {
-        best = { hit: h, k: caret.off - h.start };
-        if (caret.off < h.start + len) break;
+      if (pos.off >= h.start && pos.off <= h.start + len) {
+        best = { hit: h, k: pos.off - h.start };
+        if (pos.off < h.start + len) break;
       }
     }
     return best;
   }
+
+  const caretVis = () => visFor(caret);
 
   function drawCaret() {
     document.querySelectorAll(".caret").forEach((n) => n.remove());
@@ -253,6 +255,63 @@
   }
 
   let mouse = null;
+  // Keyboard selection: fixed anchor and moving focus, in document coords.
+  let selAnchor = null;
+  let selFocus = null;
+
+  function refAt(pos) {
+    const vis = visFor(pos);
+    if (!vis) return null;
+    return { page: vis.hit.page, idx: vis.hit.id, k: vis.k };
+  }
+
+  function extendSelection(key) {
+    // Establish anchor and focus from the caret or an existing selection.
+    if (!selAnchor) {
+      if (caret) {
+        selAnchor = { ...caret };
+        selFocus = { ...caret };
+      } else if (sel) {
+        const A = getRun(sel.a), B = getRun(sel.b);
+        if (!A || !B || A.path === null || B.path === null) return;
+        selAnchor = { path: A.path, off: A.start + sel.a.k };
+        selFocus = { path: B.path, off: B.start + sel.b.k };
+      } else return;
+    }
+    if (key === "ArrowLeft") selFocus = { ...selFocus, off: Math.max(0, selFocus.off - 1) };
+    else if (key === "ArrowRight") {
+      const len = chars(conv.paragraph_text_at(selFocus.path) || "").length;
+      selFocus = { ...selFocus, off: Math.min(len, selFocus.off + 1) };
+    } else {
+      const t = lineTarget(selFocus, key === "ArrowDown" ? +1 : -1);
+      if (t) selFocus = t;
+    }
+    if (selAnchor.path === selFocus.path && selAnchor.off === selFocus.off) {
+      sel = null;
+      caret = { ...selFocus };
+    } else {
+      const a = refAt(selAnchor), b = refAt(selFocus);
+      if (!a || !b) return;
+      sel = orderSel(a, b);
+      caret = null;
+    }
+    drawCaret();
+    drawSelection();
+    report();
+  }
+
+  // A non-shift arrow collapses an active selection to one of its edges.
+  function collapseSelection(toEnd) {
+    const ref = toEnd ? sel.b : sel.a;
+    const run = getRun(ref);
+    sel = null;
+    selAnchor = null;
+    selFocus = null;
+    if (run && run.path !== null) caret = { path: run.path, off: run.start + ref.k };
+    drawCaret();
+    drawSelection();
+    report();
+  }
   pagesEl.addEventListener("mousedown", (e) => {
     const svg = e.target.closest("svg");
     if (!svg) return;
@@ -330,6 +389,8 @@
 
   function clickAt(page, x, y) {
     finalizeComposition();
+    selAnchor = null;
+    selFocus = null;
     sel = null;
     drawSelection();
     const found = findHit(page, x, y);
@@ -563,6 +624,12 @@
       enterKey();
     } else if (e.key === "Home" && caret) { e.preventDefault(); caretToLineEdge(false); }
     else if (e.key === "End" && caret) { e.preventDefault(); caretToLineEdge(true); }
+    else if (e.shiftKey && /^Arrow(Left|Right|Up|Down)$/.test(e.key)) {
+      e.preventDefault();
+      extendSelection(e.key);
+    }
+    else if (e.key === "ArrowLeft" && sel) { e.preventDefault(); collapseSelection(false); }
+    else if (e.key === "ArrowRight" && sel) { e.preventDefault(); collapseSelection(true); }
     else if (e.key === "ArrowLeft" && caret) { e.preventDefault(); caret.off = Math.max(0, caret.off - 1); drawCaret(); report(); }
     else if (e.key === "ArrowRight" && caret) { e.preventDefault(); caret.off += 1; drawCaret(); report(); }
     else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && caret) {
@@ -575,8 +642,19 @@
   // position, pick the nearest hit on the closest baseline in that
   // direction (crossing to the neighboring page when needed).
   function moveCaretLine(dir) {
-    const vis = caretVis();
-    if (!vis) return;
+    const target = lineTarget(caret, dir);
+    if (!target) return;
+    caret = target;
+    sel = null;
+    drawSelection();
+    drawCaret();
+    report();
+  }
+
+  // The (path, off) one visual line above or below `pos`, or null.
+  function lineTarget(pos, dir) {
+    const vis = visFor(pos);
+    if (!vis) return null;
     const { hit: h, k } = vis;
     const cx = h.x + cum(h, k);
     const half = 0.4 * h.size; // same-baseline tolerance
@@ -608,15 +686,11 @@
       }
       if (best) { target = best.cand; break; }
     }
-    if (!target || target.path === null) return;
-    if (!/^(d|h|f|fn|en)\//.test(target.path)) return;
+    if (!target || target.path === null) return null;
+    if (!/^(d|h|f|fn|en)\//.test(target.path)) return null;
     let kk = 0, xx = target.x;
     for (const a of target.adv) { if (cx < xx + a / 2) break; xx += a; kk++; }
-    caret = { path: target.path, off: (target.start ?? 0) + kk };
-    sel = null;
-    drawSelection();
-    drawCaret();
-    report();
+    return { path: target.path, off: (target.start ?? 0) + kk };
   }
 
   // ---- IME composition (Korean etc.) --------------------------------------
