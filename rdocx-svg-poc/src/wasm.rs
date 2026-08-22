@@ -341,6 +341,25 @@ impl SvgConverter {
         )
     }
 
+    /// Replace every given range with `text` as one history entry (replace
+    /// all). Ranges arrive in document order and non-overlapping; they are
+    /// applied in reverse so earlier offsets in the same paragraph survive.
+    /// Notes whose markers fall inside a range are removed (Word behavior).
+    pub fn replace_all(&mut self, json: &str, text: &str) -> Result<String, JsValue> {
+        let ranges = Self::parse_ranges(json)?;
+        let text = text.to_owned();
+        self.mutate(
+            move |d| {
+                Self::remove_ranges_notes(d, &ranges)
+                    && ranges.iter().rev().all(|(at, s, e)| {
+                        delete_range_at(d, at, *s, *e)
+                            && (text.is_empty() || insert_text_at(d, at, *s, &text))
+                    })
+            },
+            "replace all",
+        )
+    }
+
     fn parse_ranges(json: &str) -> Result<Vec<(crate::EditPath, usize, usize)>, JsValue> {
         #[derive(serde::Deserialize)]
         struct RangeSpec {

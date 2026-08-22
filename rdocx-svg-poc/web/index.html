@@ -30,10 +30,13 @@
     <span id="findcount"></span>
     <button id="findprev" title="이전 (Shift+Enter)">▲</button>
     <button id="findnext" title="다음 (Enter)">▼</button>
+    <input id="replq" placeholder="바꾸기" autocomplete="off" size="12">
+    <button id="replone" title="현재 매치 바꾸기">바꾸기</button>
+    <button id="replall" title="모두 바꾸기">모두</button>
     <button id="findclose" title="닫기 (Esc)">✕</button>
   </span>
   <span id="status">loading wasm…</span>
-  <span id="hint">click: caret · drag: select · type/Enter/Backspace/화살표 · Ctrl+B/I/U · Ctrl+Z/Y · Ctrl+C · Ctrl+F 찾기 · Ctrl+Alt+F 각주/E 미주/D 삭제 · 한글 IME</span>
+  <span id="hint">click: caret · drag: select · type/Enter/Backspace/화살표 · Ctrl+B/I/U · Ctrl+Z/Y · Ctrl+C · Ctrl+F 찾기/H 바꾸기 · Ctrl+Alt+F 각주/E 미주/D 삭제 · 한글 IME</span>
 </header>
 <div id="pages"></div>
 <input id="ime" autocomplete="off" style="position:fixed; top:0; left:-9999px; width:100px; opacity:0">
@@ -281,7 +284,7 @@
         while (idx !== -1) {
           const start = chars(text.slice(0, idx)).length;
           findMatches.push({ path, start, end: start + qlen });
-          idx = low.indexOf(ql, idx + 1);
+          idx = low.indexOf(ql, idx + ql.length); // non-overlapping, like Word
         }
       }
     }
@@ -383,6 +386,47 @@
   document.getElementById("findprev").onclick = () => gotoFind(-1);
   document.getElementById("findnext").onclick = () => gotoFind(1);
   document.getElementById("findclose").onclick = closeFind;
+
+  const replq = document.getElementById("replq");
+  replq.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); replaceCurrent(); }
+    else if (e.key === "Escape") { e.preventDefault(); closeFind(); }
+    e.stopPropagation();
+  });
+
+  // Replace the current match, then advance to the next match at or after
+  // the replacement site (apply() reruns the search, so indices are fresh).
+  function replaceCurrent() {
+    if (findCur < 0) { gotoFind(1); return; }
+    const m = findMatches[findCur];
+    const order = findParaOrder();
+    const before = { para: order.indexOf(m.path), start: m.start };
+    replaceSelWith(replq.value); // one history entry; apply() reran the find
+    if (!findMatches.length) return;
+    let next = findMatches.findIndex((c) => {
+      const pi = order.indexOf(c.path);
+      return pi > before.para || (pi === before.para && c.start >= before.start);
+    });
+    if (next === -1) next = 0;
+    findCur = next - 1; // so gotoFind(+1) lands exactly on `next`
+    gotoFind(1);
+  }
+
+  // Replace every match as one history entry (single undo).
+  function replaceAll() {
+    if (!findMatches.length) return;
+    const n = findMatches.length;
+    edit(() => {
+      const json = conv.replace_all(JSON.stringify(findMatches), replq.value);
+      caret = null;
+      sel = null;
+      return json;
+    });
+    report(`모두 바꾸기: ${n}건`);
+  }
+
+  document.getElementById("replone").onclick = replaceCurrent;
+  document.getElementById("replall").onclick = replaceAll;
 
   // Underline the in-flight IME preedit, the visual convention for "not
   // committed yet". Overlay-only: the document never carries the underline,
@@ -926,10 +970,18 @@
 
   document.addEventListener("keydown", (e) => {
     if (e.isComposing) return;
-    if (e.target === findq) return; // the find box has its own handler
+    if (e.target === findq || e.target === replq) return; // own handlers
     const ctrl = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
     if (ctrl && !e.altKey && key === "f") { e.preventDefault(); openFind(); return; }
+    if (ctrl && !e.altKey && key === "h") {
+      e.preventDefault();
+      findbar.hidden = false;
+      runFind(true);
+      replq.focus();
+      replq.select();
+      return;
+    }
     if (e.key === "Escape" && !findbar.hidden) { e.preventDefault(); closeFind(); return; }
     if (ctrl && key === "c") { e.preventDefault(); copySelection(); return; }
     if (ctrl && key === "a") { e.preventDefault(); selectAll(); return; }
@@ -1184,6 +1236,8 @@
     findQuery: (q) => { findq.value = q; runFind(false); },
     findNext: () => gotoFind(1),
     findPrev: () => gotoFind(-1),
+    replaceWith: (q) => { replq.value = q; replaceCurrent(); },
+    replaceAllWith: (q) => { replq.value = q; replaceAll(); },
     findState: () => ({
       open: !findbar.hidden,
       count: findMatches.length,
