@@ -282,6 +282,43 @@
     drawSelection();
     report();
   });
+  pagesEl.addEventListener("dblclick", (e) => {
+    const svg = e.target.closest("svg");
+    if (!svg) return;
+    const page = [...pagesEl.children].indexOf(svg) + 1;
+    const pt = svgPoint(svg, e.clientX, e.clientY);
+    const found = findHit(page, pt.x, pt.y);
+    if (!found || found.hit.path === null || found.hit.start === null) return;
+    const h = found.hit;
+    const text = conv.paragraph_text_at(h.path) || "";
+    const cs = chars(text);
+    let off = Math.min(h.start + found.k, cs.length);
+    if (off >= cs.length) off = cs.length - 1;
+    if (off < 0) return;
+    const isWord = (ch) => ch && !/\s/.test(ch);
+    if (!isWord(cs[off])) return;
+    let lo = off, hi = off + 1;
+    while (lo > 0 && isWord(cs[lo - 1])) lo--;
+    while (hi < cs.length && isWord(cs[hi])) hi++;
+    // Represent as a hit-ref selection within this paragraph: find runs
+    // covering lo/hi on any line of this paragraph.
+    const at = (offset, wantEnd) => {
+      for (const cand of allHits()) {
+        if (cand.path !== h.path || cand.start === null) continue;
+        const lo2 = cand.start, hi2 = cand.start + chars(cand.text).length;
+        if (offset >= lo2 && (offset < hi2 || (wantEnd && offset <= hi2)))
+          return { page: cand.page, idx: cand.id, k: offset - lo2 };
+      }
+      return null;
+    };
+    const a = at(lo, false), b = at(hi, true);
+    if (!a || !b) return;
+    sel = orderSel(a, b);
+    caret = null;
+    drawCaret(); drawSelection();
+    report(`word: ${JSON.stringify(cs.slice(lo, hi).join(""))}`);
+  });
+
   window.addEventListener("mouseup", (e) => {
     if (!mouse) return;
     if (!mouse.dragged) {
@@ -449,6 +486,50 @@
     });
   }
 
+  function forwardDelete() {
+    const len = chars(conv.paragraph_text_at(caret.path) || "").length;
+    if (caret.off >= len) return; // end of paragraph: forward-merge is a later stage
+    edit(() => {
+      const json = conv.delete(caret.path, caret.off + 1);
+      return json; // caret offset unchanged
+    });
+  }
+
+  // Home/End relative to the caret's visual line: among hits of the same
+  // paragraph on the same baseline, jump to the smallest or largest offset.
+  function caretToLineEdge(end) {
+    const vis = caretVis();
+    if (!vis) { caret.off = end ? chars(conv.paragraph_text_at(caret.path) || "").length : 0; drawCaret(); report(); return; }
+    const { hit: h } = vis;
+    let bestOff = null;
+    for (const cand of pageHits[h.page - 1] || []) {
+      if (cand.path !== caret.path || cand.start === null) continue;
+      if (Math.abs(cand.y - h.y) > 0.4 * h.size) continue;
+      const lo = cand.start, hi = cand.start + chars(cand.text).length;
+      const v = end ? hi : lo;
+      if (bestOff === null || (end ? v > bestOff : v < bestOff)) bestOff = v;
+    }
+    if (bestOff !== null) { caret.off = bestOff; drawCaret(); report(); }
+  }
+
+  // Select from the first to the last hit run of the document (display and
+  // copy; range edits still require compatible endpoints).
+  function selectAll() {
+    let first = null, last = null;
+    for (let pg = 0; pg < pageHits.length; pg++) {
+      for (const h of pageHits[pg] || []) {
+        if (h.adv.length === 0) continue;
+        const ref = { page: h.page, idx: h.id };
+        if (!first) first = { ...ref, k: 0 };
+        last = { ...ref, k: h.adv.length };
+      }
+    }
+    if (!first || !last) return;
+    sel = { a: first, b: last };
+    caret = null;
+    drawCaret(); drawSelection(); report();
+  }
+
   function doUndo() { edit(() => { const j = conv.undo(); caret = null; sel = null; return j; }); }
   function doRedo() { edit(() => { const j = conv.redo(); caret = null; sel = null; return j; }); }
 
@@ -457,6 +538,7 @@
     const ctrl = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
     if (ctrl && key === "c") { e.preventDefault(); copySelection(); return; }
+    if (ctrl && key === "a") { e.preventDefault(); selectAll(); return; }
     if (ctrl && key === "z" && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
     if (ctrl && (key === "y" || (key === "z" && e.shiftKey))) { e.preventDefault(); doRedo(); return; }
     if (ctrl && e.altKey && key === "f") { e.preventDefault(); insertFootnote(); return; }
@@ -472,10 +554,16 @@
       if (selRange()) deleteSel();
       else if (caret && caret.off === 0) mergePrev();
       else if (caret) backspace();
+    } else if (e.key === "Delete") {
+      e.preventDefault();
+      if (selRange()) deleteSel();
+      else if (caret) forwardDelete();
     } else if (e.key === "Enter") {
       e.preventDefault();
       enterKey();
-    } else if (e.key === "ArrowLeft" && caret) { e.preventDefault(); caret.off = Math.max(0, caret.off - 1); drawCaret(); report(); }
+    } else if (e.key === "Home" && caret) { e.preventDefault(); caretToLineEdge(false); }
+    else if (e.key === "End" && caret) { e.preventDefault(); caretToLineEdge(true); }
+    else if (e.key === "ArrowLeft" && caret) { e.preventDefault(); caret.off = Math.max(0, caret.off - 1); drawCaret(); report(); }
     else if (e.key === "ArrowRight" && caret) { e.preventDefault(); caret.off += 1; drawCaret(); report(); }
     else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && caret) {
       e.preventDefault();
