@@ -12,8 +12,9 @@ fn main() {
     let out_root = std::path::Path::new("out/corpus");
     fs::create_dir_all(out_root).expect("create out dir");
 
-    let mut entries: Vec<_> = fs::read_dir("corpus")
-        .expect("corpus/ directory")
+    let dir = std::env::args().nth(1).unwrap_or_else(|| "corpus".to_string());
+    let mut entries: Vec<_> = fs::read_dir(&dir)
+        .expect("corpus directory")
         .filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|x| x == "docx"))
