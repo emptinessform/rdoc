@@ -60,7 +60,7 @@ fn run_one(
     let layout = doc.layout().map_err(|e| format!("layout: {e}"))?;
     let layout_ms = t.elapsed().as_secs_f64() * 1000.0;
 
-    let (svgs, hits) = render_with_hits(&doc, &layout);
+    let (svgs, hits) = render_with_hits(&doc, &layout.layout);
     let mapped = hits.iter().filter(|h| h.para.is_some()).count();
     let svg_bytes: usize = svgs.iter().map(String::len).sum();
 
@@ -76,10 +76,10 @@ fn run_one(
 
     Ok(format!(
         "{name:<28} {:>5} {:>6} {:>7} {:>8} {:>7.0}ms {:>6}  ok",
-        layout.pages.len(),
+        layout.layout.pages.len(),
         hits.len(),
         mapped,
-        layout.diagnostics.len(),
+        layout.layout.diagnostics.len(),
         layout_ms,
         svg_bytes / 1024,
     ))
