@@ -88,7 +88,7 @@ impl SvgConverter {
             .iter()
             .map(|(family, data)| (family.as_str(), data.as_slice()))
             .collect();
-        let layout = doc.layout_with_fonts(&fonts).map_err(err)?;
+        let layout = doc.layout_with_fonts_and_bundled_fallback(&fonts).map_err(err)?;
         let delta = render_delta(doc, &layout.layout, &mut self.cache);
         serde_json::to_string(&RenderOut {
             total: delta.total_pages,
@@ -243,13 +243,15 @@ impl SvgConverter {
         self.render()
     }
 
-    /// Swap in a restored document.
-    ///
-    /// v0.8.0 spike: upstream has no public engine handoff yet (a
-    /// session/handle design is under discussion), so undo/redo go
-    /// engine-cache-cold until that lands. On wasm this matters less: the
-    /// caller-fonts layout path builds a fresh engine every call anyway.
+    /// Swap in a restored document, carrying the fallback layout engine
+    /// (and its content-keyed relayout caches) over so undo/redo do not go
+    /// cache-cold. Interim fork API until F-X039's session design lands.
     fn replace_doc(&mut self, new_doc: rdocx::Document) {
+        if let Some(old) = self.doc.as_ref()
+            && let Some(engine) = old.take_layout_engine()
+        {
+            new_doc.set_layout_engine(engine);
+        }
         self.doc = Some(new_doc);
     }
 
