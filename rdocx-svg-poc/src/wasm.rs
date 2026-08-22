@@ -432,6 +432,12 @@ impl SvgConverter {
         )
     }
 
+    /// Remove the k-th inline image in document order (matches the DOM's
+    /// `<image>` order for inline body images). One history entry.
+    pub fn remove_image(&mut self, index: usize) -> Result<String, JsValue> {
+        self.mutate(move |d| d.remove_inline_image(index), "remove image")
+    }
+
     /// Set the paragraph style for every path in the JSON string array, as
     /// one history entry.
     pub fn set_style_paths(&mut self, json: &str, style_id: &str) -> Result<String, JsValue> {

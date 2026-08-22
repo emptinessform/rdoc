@@ -245,6 +245,7 @@
     lastDelta = `${drawnNow}/${out.total} pages redrawn` +
                 (dirtyPages.size ? `, ${dirtyPages.size} deferred` : "");
     sel = null;
+    imageSel = null; // page DOM replaced; outline went with it
     applyZoom();
     drawCaret();
     drawSelection();
@@ -386,6 +387,37 @@
       sel = null;
       return json;
     });
+  }
+
+  // Click-selected inline image: outlined in the DOM, deleted with
+  // Delete/Backspace via its document-order index (matches <image> order).
+  let imageSel = null; // { el, index }
+
+  function clearImageSel() {
+    if (imageSel && imageSel.el) imageSel.el.style.outline = "";
+    imageSel = null;
+  }
+
+  function selectImage(el) {
+    clearImageSel();
+    finalizeComposition();
+    const all = [...document.querySelectorAll("#pages svg image")];
+    const index = all.indexOf(el);
+    if (index === -1) return;
+    caret = null;
+    sel = null;
+    drawCaret();
+    drawSelection();
+    el.style.outline = "2px solid #1a73e8";
+    imageSel = { el, index };
+    report(`이미지 선택 (${index + 1}번째) — Delete로 삭제`);
+  }
+
+  function deleteSelectedImage() {
+    if (!imageSel) return;
+    const idx = imageSel.index;
+    clearImageSel();
+    edit(() => conv.remove_image(idx));
   }
 
   const imgfileEl = document.getElementById("imgfile");
@@ -830,6 +862,14 @@
     report();
   }
   pagesEl.addEventListener("mousedown", (e) => {
+    const imgEl = e.target.closest && e.target.closest("image");
+    if (imgEl) {
+      e.preventDefault();
+      selectImage(imgEl);
+      mouse = null;
+      return;
+    }
+    if (imageSel) clearImageSel();
     const svg = e.target.closest("svg");
     if (!svg) return;
     finalizeComposition();
@@ -959,6 +999,7 @@
 
   function clickAt(page, x, y) {
     finalizeComposition();
+    clearImageSel();
     selAnchor = null;
     selFocus = null;
     sel = null;
@@ -1244,6 +1285,10 @@
   document.addEventListener("keydown", (e) => {
     if (e.isComposing) return;
     if (e.target === findq || e.target === replq || e.target.id === "fontsize") return;
+    if (imageSel) {
+      if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelectedImage(); return; }
+      if (e.key === "Escape") { e.preventDefault(); clearImageSel(); report(); return; }
+    }
     const ctrl = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
     if (ctrl && !e.altKey && key === "f") { e.preventDefault(); openFind(); return; }
@@ -1523,6 +1568,9 @@
     tableOp,
     setStyle: styleSelection,
     insertImage: insertImageBytes,
+    selectImageAt: (k) => selectImage(document.querySelectorAll("#pages svg image")[k]),
+    imageSel: () => (imageSel ? imageSel.index : null),
+    deleteImage: deleteSelectedImage,
     fontSize: applyFontSize,
     fmtOn: (ranges, f) => conv.ranges_format_on(JSON.stringify(ranges), f),
     thumbs: () => ({
