@@ -574,6 +574,9 @@
     if (!sel) return "";
     let out = "", prev = null;
     for (const h of allHits()) {
+      // Decorative runs (note markers, list bullets, generated page
+      // numbers) have no source path; Word does not copy them as text.
+      if (h.path === null) continue;
       const ref = { page: h.page, idx: h.id };
       const cs = chars(h.text);
       if (cmpPos({ ...ref, k: cs.length }, sel.a) < 0 || cmpPos({ ...ref, k: 0 }, sel.b) > 0) continue;
@@ -582,12 +585,7 @@
       const k1 = sameA ? sel.a.k : 0;
       const k2 = sameB ? sel.b.k : cs.length;
       if (k2 <= k1) continue;
-      if (prev) {
-        const paraBreak = prev.path !== null && h.path !== null && prev.path !== h.path;
-        const lineBreak = (prev.path === null || h.path === null) &&
-                          (h.page !== prev.page || Math.abs(h.y - prev.y) > 0.5 * h.size);
-        if (paraBreak || lineBreak) out += "\n";
-      }
+      if (prev && prev.path !== h.path) out += "\n";
       out += cs.slice(k1, k2).join("");
       prev = h;
     }
