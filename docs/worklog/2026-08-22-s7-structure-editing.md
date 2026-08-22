@@ -58,6 +58,10 @@ Enter(문단 분할)와 Backspace 병합을 본문 전용에서 **표 셀·머�
   타이핑; 새 빈 각주 — 캐럿 즉시 표시 + 타이핑 (S7-2의 UX 노트 해소).
   분할/노트/IME/왕복 회귀 그린, rdocx-layout 147/147, 테스트 7/7,
   코퍼스 14/14, 네이티브 31ms.
+- **PR #41 반영** (사용자 승인): engine.rs 부분만 체리픽(baa102b, PR
+  브랜치 147/147)해 푸시 + 코멘트 (F-X037 커버리지 확장 관점 설명,
+  분리 PR 선호 시 분리 의사).
+  https://github.com/tensorbee/rdocx/pull/41#issuecomment-5378435186
 
 ## 남은 한계
 
