@@ -215,6 +215,7 @@
   pagesEl.addEventListener("mousedown", (e) => {
     const svg = e.target.closest("svg");
     if (!svg) return;
+    finalizeComposition();
     const page = [...pagesEl.children].indexOf(svg) + 1;
     const pt = svgPoint(svg, e.clientX, e.clientY);
     const found = findHit(page, pt.x, pt.y);
@@ -250,6 +251,7 @@
   });
 
   function clickAt(page, x, y) {
+    finalizeComposition();
     sel = null;
     drawSelection();
     const found = findHit(page, x, y);
@@ -405,9 +407,31 @@
     });
   }
 
-  ime.addEventListener("compositionstart", () => { if (caret) comp = { base: caret.off, len: 0 }; });
+  // Keep whatever preedit is on screen and close the undo unit — used when
+  // the user clicks away mid-composition. The IME's own later events find
+  // comp === null and do nothing; blur/refocus resets the OS composition.
+  function finalizeComposition() {
+    if (!comp) return;
+    comp = null;
+    conv.end_composition();
+    ime.value = "";
+    ime.blur();
+  }
+
+  ime.addEventListener("compositionstart", () => {
+    const r = selRange();
+    conv.begin_composition(); // one undo unit: selection removal + preedit
+    if (r) deleteSel();
+    if (caret) comp = { base: caret.off, len: 0 };
+    else conv.end_composition();
+  });
   ime.addEventListener("compositionupdate", (e) => applyComp(e.data || ""));
-  ime.addEventListener("compositionend", (e) => { applyComp(e.data || ""); comp = null; ime.value = ""; });
+  ime.addEventListener("compositionend", (e) => {
+    applyComp(e.data || "");
+    comp = null;
+    ime.value = "";
+    conv.end_composition();
+  });
 
   // ---- load ----------------------------------------------------------------
 
@@ -444,6 +468,13 @@
         ime.dispatchEvent(new CompositionEvent("compositionupdate", { data: s }));
       ime.dispatchEvent(new CompositionEvent("compositionend", { data: steps[steps.length - 1] }));
     },
+    // Step-wise composition, so tests can inspect state between events.
+    imeStart: () => {
+      ime.focus();
+      ime.dispatchEvent(new CompositionEvent("compositionstart"));
+    },
+    imeUpdate: (s) => ime.dispatchEvent(new CompositionEvent("compositionupdate", { data: s })),
+    imeEnd: (s) => ime.dispatchEvent(new CompositionEvent("compositionend", { data: s })),
     select: (page, x1, y1, x2, y2) => {
       const p = findHit(page, x1, y1), q = findHit(page, x2, y2);
       if (!p || !q) return null;

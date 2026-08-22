@@ -24,6 +24,10 @@ pub struct SvgConverter {
     /// heavy on large documents.
     undo: Vec<Vec<u8>>,
     redo: Vec<Vec<u8>>,
+    /// While an IME composition is in flight, edits skip checkpointing so
+    /// the whole composition is one undo entry (pushed by
+    /// `begin_composition`).
+    composing: bool,
     cache: RenderCache,
 }
 
@@ -45,6 +49,7 @@ impl SvgConverter {
             doc: None,
             undo: Vec::new(),
             redo: Vec::new(),
+            composing: false,
             cache: RenderCache::default(),
         }
     }
@@ -59,6 +64,7 @@ impl SvgConverter {
         self.doc = Some(rdocx::Document::from_bytes(docx).map_err(err)?);
         self.undo.clear();
         self.redo.clear();
+        self.composing = false;
         self.cache.clear();
         Ok(())
     }
@@ -68,6 +74,7 @@ impl SvgConverter {
         self.doc = Some(crate::build_demo_doc());
         self.undo.clear();
         self.redo.clear();
+        self.composing = false;
         self.cache.clear();
     }
 
@@ -109,14 +116,46 @@ impl SvgConverter {
         op: impl FnOnce(&mut rdocx::Document) -> bool,
         what: &str,
     ) -> Result<String, JsValue> {
-        self.checkpoint()?;
+        let checkpointed = !self.composing;
+        if checkpointed {
+            self.checkpoint()?;
+        }
         let doc = self.doc.as_mut().unwrap();
         if !op(doc) {
             // Roll the failed checkpoint back so undo stays truthful.
-            self.undo.pop();
+            if checkpointed {
+                self.undo.pop();
+            }
             return Err(err(format!("{what} failed at that position")));
         }
         self.render()
+    }
+
+    /// Open an IME composition: one checkpoint now, none for the preedit
+    /// updates that follow, so undo removes the composed text as a unit.
+    pub fn begin_composition(&mut self) -> Result<(), JsValue> {
+        if self.composing {
+            return Ok(());
+        }
+        self.checkpoint()?;
+        self.composing = true;
+        Ok(())
+    }
+
+    /// Close the composition opened by `begin_composition`. A cancelled
+    /// composition (empty final text, nothing else edited) leaves the
+    /// document identical to its checkpoint, which is then dropped so undo
+    /// does not step through a no-op.
+    pub fn end_composition(&mut self) {
+        if !self.composing {
+            return;
+        }
+        self.composing = false;
+        if let (Some(doc), Some(prev)) = (self.doc.as_mut(), self.undo.last())
+            && doc.to_bytes().ok().as_deref() == Some(prev.as_slice())
+        {
+            self.undo.pop();
+        }
     }
 
     /// Insert text at (paragraph, char offset), then re-render.
@@ -181,6 +220,7 @@ impl SvgConverter {
     }
 
     pub fn undo(&mut self) -> Result<String, JsValue> {
+        self.composing = false;
         let prev = self.undo.pop().ok_or_else(|| err("nothing to undo"))?;
         if let Some(doc) = self.doc.as_mut()
             && let Ok(cur) = doc.to_bytes()
@@ -192,6 +232,7 @@ impl SvgConverter {
     }
 
     pub fn redo(&mut self) -> Result<String, JsValue> {
+        self.composing = false;
         let next = self.redo.pop().ok_or_else(|| err("nothing to redo"))?;
         if let Some(doc) = self.doc.as_mut()
             && let Ok(cur) = doc.to_bytes()

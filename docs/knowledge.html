@@ -74,6 +74,7 @@
 5. <a href="#s5">undo를 눌러도 캐시가 살아남게 — 엔진 이월</a><br>
 6. <a href="#s6">재시작 가능한 페이지네이션</a><br>
 7. <a href="#s7">완성하며 배운 것 — 체크포인트의 함정과 공유의 힘</a><br>
+8. <a href="#s8">한글 입력의 비밀 — IME 조합과 undo 묶기</a><br>
 </div>
 
 <h2 id="s1">1. 이 프로젝트는 무엇을 하나</h2>
@@ -356,6 +357,68 @@ undo(되돌리기)는 "예전 문서 상태를 통째로 복원"하는 방식이
 비용까지 계산해야 진짜 이득</b>입니다. 그리고 성능 작업은 반드시 단계마다
 실측 — "빨라졌겠지"는 두 번 틀렸습니다.
 </p>
+
+<h2 id="s8">8. 한글 입력의 비밀 — IME 조합과 undo 묶기</h2>
+<p>
+영어는 키 하나 = 글자 하나지만, 한글은 <b>ㅎ + ㅏ + ㄴ = 한</b>처럼 여러
+키가 모여 한 글자가 됩니다. 이 조립을 해 주는 OS 프로그램이
+<span class="term" title="Input Method Editor — 자판으로 못 치는 문자를 조립해 주는 입력기">IME</span>입니다.
+브라우저는 조립 과정을 세 가지 이벤트로 알려줍니다:
+<code>compositionstart</code>(조립 시작) → <code>compositionupdate</code>
+(조립 중 — "ㅎ", "하", "한"으로 계속 바뀜) → <code>compositionend</code>(확정).
+</p>
+<p>
+에디터는 update가 올 때마다 "직전 조합 글자를 지우고 새 것을 넣기"
+(<code>replace_range</code>)로 화면에 실시간 반영합니다. 글자 하나 바뀔 때마다
+전체 재조판이 돌지만, 3~7절의 성능 작업 덕분에 키당 수십 ms — 실시간으로
+충분합니다. <b>성능 작업이 기능을 가능하게 만든 순서</b>인 셈입니다.
+</p>
+<figure>
+<svg viewBox="0 0 740 168" role="img" aria-label="IME 조합과 undo 묶기 다이어그램">
+  <text x="10" y="20" font-size="13" font-weight="bold">조합 이벤트</text>
+  <rect class="bx" x="10" y="32" width="90" height="36" rx="6"/>
+  <text x="55" y="55" text-anchor="middle" font-size="13">"ㅎ"</text>
+  <rect class="bx" x="130" y="32" width="90" height="36" rx="6"/>
+  <text x="175" y="55" text-anchor="middle" font-size="13">"하"</text>
+  <rect class="hot" x="250" y="32" width="90" height="36" rx="6"/>
+  <text x="295" y="55" text-anchor="middle" font-size="13">"한" 확정</text>
+  <path class="ln" d="M100 50 h25" marker-end="url(#ar4)"/>
+  <path class="ln" d="M220 50 h25" marker-end="url(#ar4)"/>
+  <text x="55" y="86" text-anchor="middle" font-size="11" class="mut">update</text>
+  <text x="175" y="86" text-anchor="middle" font-size="11" class="mut">update</text>
+  <text x="295" y="86" text-anchor="middle" font-size="11" class="mut">end</text>
+  <path class="acc" d="M10 100 h330" stroke-dasharray="5 4"/>
+  <text x="175" y="122" text-anchor="middle" font-size="12" fill="var(--accent)">전체가 undo 1개 단위</text>
+  <text x="430" y="20" font-size="13" font-weight="bold">잘못된 undo (수정 전)</text>
+  <text x="430" y="48" font-size="12" class="mut">Ctrl+Z → "하"로 후퇴</text>
+  <text x="430" y="70" font-size="12" class="mut">Ctrl+Z → "ㅎ"로 후퇴</text>
+  <text x="430" y="92" font-size="12" class="mut">Ctrl+Z → 겨우 사라짐 (3번!)</text>
+  <text x="430" y="128" font-size="13" font-weight="bold">고친 undo</text>
+  <text x="430" y="150" font-size="12">Ctrl+Z 1번 → "한" 전체 제거 ✓</text>
+  <defs>
+    <marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+</svg>
+<figcaption>조합의 중간 단계는 화면에는 보이되, undo 역사에는 한 덩어리로만 남아야 합니다.</figcaption>
+</figure>
+<p>
+핵심 문제는 <b>undo의 단위</b>였습니다. 에디터는 편집 전마다 문서 스냅샷을
+undo 더미에 쌓는데, 조합 중간 단계도 편집이라 "한" 하나에 스냅샷이 3장
+쌓였습니다. 해법: 조합 시작에 스냅샷 1장만 쌓고, 조합 중에는 쌓지 않는
+플래그(<code>begin_composition</code>/<code>end_composition</code>)를
+두었습니다. 조합을 취소하면(빈 문자열로 끝나면) 문서가 스냅샷과 똑같아지므로
+그 스냅샷도 지워서, undo를 눌렀을 때 "아무 일도 안 일어나는 한 번"이 생기지
+않게 했습니다.
+</p>
+<div class="box">
+<b>배운 것</b> — 사용자 눈에 보이는 것(화면 갱신)과 역사에 남는 것(undo 단위)은
+별개의 축입니다. "보이는 건 잘게, 기록은 굵게"가 편집기의 기본 문법:
+조합뿐 아니라 나중에 드래그, 자동 교정, 붙여넣기 정리에도 같은 원리가
+쓰입니다. 검증도 이 축대로: 중간 상태는 <i>이벤트 사이에</i> 화면 텍스트를
+검사하고, undo는 횟수를 세어 검사했습니다 (시나리오 7개 자동화, 전부 통과).
+</div>
 
 </body>
 </html>
