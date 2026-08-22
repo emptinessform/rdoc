@@ -8,6 +8,13 @@ use rdocx_svg_poc::{insert_at, render_with_hits};
 
 fn main() {
     let mut doc = rdocx::Document::new();
+    // RDOCX_BENCH_HF=1 adds the common header + "Page N" footer, so the
+    // per-key cost of header/footer layout and per-page field substitution
+    // is visible; default off to keep numbers comparable with history.
+    if std::env::var("RDOCX_BENCH_HF").is_ok() {
+        doc.set_header("Relayout benchmark — draft");
+        doc.set_footer_page_number("Page ");
+    }
     doc.add_paragraph("Relayout benchmark").style("Heading1");
     for i in 0..700 {
         let mut text = String::new();

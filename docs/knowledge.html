@@ -75,6 +75,7 @@
 6. <a href="#s6">재시작 가능한 페이지네이션</a><br>
 7. <a href="#s7">완성하며 배운 것 — 체크포인트의 함정과 공유의 힘</a><br>
 8. <a href="#s8">한글 입력의 비밀 — IME 조합과 undo 묶기</a><br>
+9. <a href="#s9">지문에 숨어든 일련번호 — 조용히 죽는 캐시</a><br>
 </div>
 
 <h2 id="s1">1. 이 프로젝트는 무엇을 하나</h2>
@@ -428,6 +429,49 @@ undo 더미에 쌓는데, 조합 중간 단계도 편집이라 "한" 하나에 �
 없습니다. UI에서 <b>"일시적 표시는 오버레이, 영구적 내용은 문서"</b>로
 층을 나누면 상태 관리가 극적으로 단순해집니다.
 </p>
+
+<h2 id="s9">9. 지문에 숨어든 일련번호 — 조용히 죽는 캐시</h2>
+<p>
+쪽번호 꼬리글("Page N")을 벤치마크에 넣자 캐시가 <b>전부 빗나가기
+시작했습니다</b>. 진단 로그는 매 키 입력마다 "환경이 바뀌었다"고 했지만,
+문서는 아무것도 안 바뀌었습니다. 구성 요소별로 해시를 쪼개 찍어 보니
+꼬리글 해시만 매번 달랐습니다.
+</p>
+<figure>
+<svg viewBox="0 0 720 150" role="img" aria-label="지문에 섞인 일련번호 다이어그램">
+  <text x="10" y="20" font-size="13" font-weight="bold">같은 꼬리글, 두 번 읽기</text>
+  <rect class="bx" x="10" y="34" width="290" height="40" rx="6"/>
+  <text x="155" y="52" text-anchor="middle" font-size="12">Page {PAGE 필드} … source_id: <tspan fill="var(--accent)">1041</tspan></text>
+  <text x="155" y="68" text-anchor="middle" font-size="11" class="mut">첫 번째 재조판에서 파싱</text>
+  <rect class="bx" x="10" y="88" width="290" height="40" rx="6"/>
+  <text x="155" y="106" text-anchor="middle" font-size="12">Page {PAGE 필드} … source_id: <tspan fill="var(--accent)">1178</tspan></text>
+  <text x="155" y="122" text-anchor="middle" font-size="11" class="mut">다음 재조판에서 다시 파싱</text>
+  <path class="ln" d="M310 54 h60"/>
+  <path class="ln" d="M310 108 h60"/>
+  <rect class="hot" x="380" y="34" width="140" height="40" rx="6"/>
+  <text x="450" y="59" text-anchor="middle" font-size="13">해시 0x3A…</text>
+  <rect class="hot" x="380" y="88" width="140" height="40" rx="6"/>
+  <text x="450" y="113" text-anchor="middle" font-size="13">해시 0x9C…</text>
+  <text x="550" y="80" font-size="13">→ 내용은 같은데</text>
+  <text x="550" y="100" font-size="13">지문이 다름 = <tspan fill="var(--accent)">캐시 전멸</tspan></text>
+</svg>
+<figcaption>파싱할 때마다 새로 붙는 내부 일련번호가 해시 입력에 섞여 있었습니다.</figcaption>
+</figure>
+<p>
+범인: 필드 구조체가 디버깅용으로 갖고 있는 <code>source_id</code> — 파싱할
+때마다 전역 카운터에서 새 번호를 받습니다. 우리 지문은 구조체의 디버그
+출력을 통째로 해시했으므로, <b>내용과 무관한 일련번호가 매번 지문을
+바꿔</b> 놓았습니다. 조용한 실패라 더 위험합니다: 결과는 여전히 정확하고,
+그저 느릴 뿐이니까요. 수정: 필드는 디버그 출력 대신 <b>레이아웃이 실제로
+읽는 것만</b>(명령 문자열, 저장된 표시값, dirty 플래그) 해시.
+</p>
+<div class="box">
+<b>배운 것 두 가지.</b> ① 캐시 키에 "편하게" 디버그 문자열을 쓰면, 그 안에
+뭐가 들었는지 모른 채 서명하는 셈입니다. 키에는 의미 있는 필드만 명시적으로
+넣을 것. ② 캐시는 조용히 죽습니다 — 정확성 테스트로는 안 잡힙니다.
+"캐시가 맞았는가"를 보여 주는 진단 로그(우리는 <code>RDOCX_TIMING</code>)를
+처음부터 심어 두면, 이런 문제가 수치("env changed" 10회)로 바로 드러납니다.
+</div>
 
 </body>
 </html>
