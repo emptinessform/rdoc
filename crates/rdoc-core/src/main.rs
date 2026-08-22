@@ -4,7 +4,7 @@
 use std::fmt::Write as _;
 use std::fs;
 
-use rdocx_svg_poc::{build_demo_doc, render_with_hits};
+use rdoc_core::{build_demo_doc, render_with_hits};
 
 fn main() {
     let out_dir = std::path::Path::new("out");

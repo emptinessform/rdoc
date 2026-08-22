@@ -38,19 +38,20 @@ DOCX에서 재현하는 프로젝트입니다. 차이점: DOCX는 파서·레이
 브라우저 min ~70ms · 1/63페이지만 재렌더. 구조 연산(Enter 등)은 브라우저
 ~211ms + 화면 밖 페이지 idle 렌더.
 
-코드는 [`rdocx-svg-poc/`](rdocx-svg-poc/), 브라우저 테스트 스위트 30종은
-[`rdocx-svg-poc/web/tests/`](rdocx-svg-poc/web/tests/), 상세 기록은
+코드는 [`crates/rdoc-core/`](crates/rdoc-core/)와 [`web/`](web/), 브라우저
+테스트 스위트 32종은 [`web/tests/`](web/tests/), 상세 기록은
 [`docs/worklog/`](docs/worklog/), 과정에서 나온 지식 정리는
 [`docs/knowledge.html`](docs/knowledge.html)에 있습니다.
 
 ## 실행
 
 ```bash
+# 구조: crates/rdoc-core (렌더·편집 코어) + web/ (에디터 앱). 루트에서 실행.
 # 네이티브 (시스템 폰트 사용): out/에 SVG + 참조 PNG 생성
-cd rdocx-svg-poc && cargo run --release
+cargo run --release -p rdoc-core --bin poc
 
-# wasm 에디터 데모
-wasm-pack build --release --target web --out-dir web/pkg -- --no-default-features
+# wasm 에디터
+wasm-pack build crates/rdoc-core --release --target web --out-dir ../../web/pkg -- --no-default-features
 # 한국어 폰트 준비 (저장소에 포함하지 않음 — 라이선스):
 #   Windows: cp /c/Windows/Fonts/malgun.ttf web/
 #   또는 Noto Sans KR 등 자유 라이선스 폰트를 web/malgun.ttf로
@@ -64,17 +65,21 @@ F-X037 소스 맵, F-X038 문단 캐시), 현재는 v0.8.0 위에 리뷰 경계�
 쌓은 [포크 브랜치 svg-poc-0.8](https://github.com/emptinessform/rdocx/tree/svg-poc-0.8)을
 rev 고정으로 의존합니다:
 
-- [tensorbee/rdocx#40](https://github.com/tensorbee/rdocx/pull/40) —
-  F-X039 후보: `Arc` 페이로드 공유 (드래프트 PR, 리뷰 대기)
-- [tensorbee/rdocx#41](https://github.com/tensorbee/rdocx/pull/41) —
-  F-X040 후보: 재시작 가능한 페이지네이션 + 표/머리글 캐시 (드래프트 PR)
-- [tensorbee/rdocx#23](https://github.com/tensorbee/rdocx/issues/23) —
-  글리프 중복 진단 → 업스트림 F-X041로 편성 (SVG 백엔드 재검증 협조 예정)
+- 성능 제안 [#40](https://github.com/tensorbee/rdocx/pull/40)·[#41](https://github.com/tensorbee/rdocx/pull/41)
+  — 업스트림이 F-X039/40/43~47 강화판으로 수용(S52, v0.9.0 예정).
+  에디터 워크로드 성능 검증 후 이행 예정.
+- [#42](https://github.com/tensorbee/rdocx/issues/42)·[#43](https://github.com/tensorbee/rdocx/pull/43)
+  — 밀집 서식(중첩 표·세로 병합·exact 행·표 스타일) 레이아웃 수정 7건
+  → 업스트림 S53 **F-X048**(Dense form table fidelity)로 편성, v0.9.0
+  릴리스 노트 크레딧 예정.
+- [#23](https://github.com/tensorbee/rdocx/issues/23) — 글리프 중복 진단
+  → F-X041로 수정·종결 (진단·테스트 케이스 크레딧).
 
 ## 로드맵
 
-[`docs/01-roadmap.md`](docs/01-roadmap.md) — 단계별 검증 게이트를 통과하며
-진행합니다: 읽기 전용 뷰어 → 편집 MVP → 증분 레이아웃/IME → 협업.
+PoC 단계(뷰어 → 편집 MVP → 증분 레이아웃/IME → 실문서 검증)는 완료.
+현재는 본격 구현 단계 — [`docs/01-roadmap.md`](docs/01-roadmap.md):
+M0 제품 골격 → M1 에디터 완성도 → M2 문서 기능 → M3 제품화.
 
 ## 진행 방식
 

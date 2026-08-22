@@ -1882,7 +1882,7 @@ pub fn delete_range_across(
     // Notes whose reference marker falls inside the range go first (their
     // reference runs carry no text, so char offsets are unaffected).
     let mut doomed: Vec<(bool, i32)> = Vec::new();
-    let mut collect = |v: Vec<(bool, i32)>, doomed: &mut Vec<(bool, i32)>| {
+    let collect = |v: Vec<(bool, i32)>, doomed: &mut Vec<(bool, i32)>| {
         for x in v {
             if !doomed.contains(&x) {
                 doomed.push(x);

@@ -8,7 +8,7 @@
 ## 실행 방법
 
 ```bash
-# 0) 서버 (web/에서, 한국어 폰트를 web/malgun.ttf로 먼저 복사)
+# 0) 서버 (워크스페이스 루트의 web/에서, 한국어 폰트를 web/malgun.ttf로 먼저 복사)
 python -m http.server 8741
 
 # 1) 스크립트는 /tmp 아래에 있어야 browse eval이 읽는다

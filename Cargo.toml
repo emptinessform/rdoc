@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["crates/rdoc-core"]
+
+# Build commands (run from this workspace root):
+#   native tools:  cargo run --release -p rdoc-core --bin poc
+#   wasm bundle:   wasm-pack build crates/rdoc-core --release --target web \
+#                    --out-dir ../../web/pkg -- --no-default-features

@@ -143,9 +143,9 @@ dependencies = [
 
 [[package]]
 name = "font-types"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75382bc7392ef10aad10935f92fc3db36d2d4dad0e5d96d8d65e04f89a07ec39"
+checksum = "e64eb721ca85a34323425f4041adc5d82704d3782d5f8f03793bc012419dce23"
 dependencies = [
  "bytemuck",
 ]
@@ -226,9 +226,9 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "log"
-version = "0.4.33"
+version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
+checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "memchr"
@@ -414,6 +414,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rdoc-core"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "oxml-layout",
+ "rdocx",
+ "serde",
+ "serde_json",
+ "ttf-parser",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "rdocx"
 version = "0.8.0"
 source = "git+https://github.com/emptinessform/rdocx?rev=61f1151ce5494463e3fcb23f507cb04d1eed4eff#61f1151ce5494463e3fcb23f507cb04d1eed4eff"
@@ -469,19 +482,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rdocx-svg-poc"
-version = "0.1.0"
-dependencies = [
- "base64",
- "oxml-layout",
- "rdocx",
- "serde",
- "serde_json",
- "ttf-parser",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "read-fonts"
 version = "0.39.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -498,7 +498,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "046a7d674daf459825b32f5062056d6882db0d2f5a479fbd76ccfc870ac18709"
 dependencies = [
  "bytemuck",
- "font-types 0.12.3",
+ "font-types 0.12.4",
  "once_cell",
 ]
 

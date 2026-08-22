@@ -1,18 +1,17 @@
 [package]
-name = "rdocx-svg-poc"
+name = "rdoc-core"
 version = "0.1.0"
 edition = "2024"
 publish = false
 
-# PoC: SVG rendering backend on top of rdocx's layout output.
-# Depends on a fork of https://github.com/tensorbee/rdocx carrying two
-# patches: public `Document::layout()` and `Document::layout_with_fonts()`
-# accessors exposing the full LayoutResult (positioned pages + font bytes).
-# Proposed upstream: https://github.com/tensorbee/rdocx/issues/37
+# rdoc-core: the SVG renderer, hit testing, and editing operations behind
+# the rdoc web editor, on top of rdocx's layout output. Depends on the
+# emptinessform/rdocx fork (branch svg-poc-0.8, rev pinned) carrying the
+# editor APIs and dense-form layout fixes not yet upstream.
 #
-# Native build (system fonts):  cargo run --release
-# Wasm build (caller-supplied fonts):
-#   wasm-pack build --release --target web --out-dir web/pkg -- --no-default-features
+# Build from the workspace root:
+#   native tools:  cargo run --release -p rdoc-core --bin poc
+#   wasm bundle:   wasm-pack build crates/rdoc-core --release --target web #                    --out-dir ../../web/pkg -- --no-default-features
 
 [lib]
 crate-type = ["cdylib", "rlib"]

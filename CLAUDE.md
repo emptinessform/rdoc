@@ -19,14 +19,17 @@
 ## 빌드·검증 명령
 
 ```bash
-# 네이티브 PoC (시스템 폰트): out/에 SVG + 참조 PNG + hits.json
-cd rdocx-svg-poc && cargo run --release --bin poc
+# 워크스페이스 루트에서 실행. 구조: crates/rdoc-core (코어) + web/ (앱)
+# 네이티브 (시스템 폰트): out/에 SVG + 참조 PNG + hits.json
+cargo run --release -p rdoc-core --bin poc
 
 # wasm 빌드
-wasm-pack build --release --target web --out-dir web/pkg -- --no-default-features
+wasm-pack build crates/rdoc-core --release --target web --out-dir ../../web/pkg -- --no-default-features
 
 # 웹 데모 서버 (web/에서): 한국어 폰트를 web/malgun.ttf로 먼저 복사
 python -m http.server 8741
+
+# 브라우저 테스트 스위트: web/tests/ (실행 규약은 web/tests/README.md)
 ```
 
 브라우저 검증은 헤드리스 브라우저(browse 스킬)로 자동화한다.
@@ -44,11 +47,14 @@ python -m http.server 8741
   API, dense-form 레이아웃 수정(중첩 표·vMerge·exact 행·표 스타일
   캐스케이드·셀 앵커). 구 브랜치 `svg-poc`(pre-0.8.0)와 `perf-caches`는
   참고용 유산.
-- 업스트림 상태: #39 종결(캐시는 F-X038로 수용·크레딧). 드래프트 PR
-  3건 리뷰 대기 — #40(F-X039 Arc 공유), #41(F-X040 재시작 페이지네이션,
-  #40 스택), #43(dense-form 레이아웃 7건, #41 스택, 이슈 #42 동반 —
-  바깥 경계 nil 테두리의 스펙-Word 괴리 판단 요청 포함). #23 글리프
-  중복은 S52 F-X041로 편성 (진단 크레딧, SVG 백엔드 재검증 협조 예정).
+- 업스트림 상태 (2026-08-23): #39/#40/#41 종결 — 성능 작업은 S52
+  F-X039/40/43~47 강화판으로 수용 (v0.9.0·rpptx-v0.5.0 릴리스 노트
+  크레딧 예정). #42/#43은 S53 **F-X048**(Dense form table fidelity)로
+  편성 — PR #43은 머지 대신 S52 엔진 위 재구현, F-X048 착지 시
+  "addressed"로 종결 예정 (v0.9.0 마일스톤; 그때까지 open 유지).
+  #23 종결 — F-X041(27a9802), 우리 진단·테스트 케이스 크레딧.
+  s52 이행은 에디터 성능 회귀(타이핑 2.4×, 노트 ~10×)로 보류 —
+  피드백 초안은 docs/upstream/에 보관(미게시), v0.9.0 즈음 재평가.
   게시 초안·URL 기록은 docs/upstream/.
 - 업스트림에 변화가 있으면(답변, 수정) 포크 리베이스와 rev 갱신을 검토하고
   worklog에 기록한다. 업스트림 게시(이슈·PR·코멘트)는 사용자 확인 후 한다.

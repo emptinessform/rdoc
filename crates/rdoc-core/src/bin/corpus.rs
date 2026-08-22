@@ -6,7 +6,7 @@ use std::fs;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Instant;
 
-use rdocx_svg_poc::render_with_hits;
+use rdoc_core::render_with_hits;
 
 fn main() {
     let out_root = std::path::Path::new("out/corpus");

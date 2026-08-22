@@ -4,7 +4,7 @@
 use std::fmt::Write as _;
 use std::time::Instant;
 
-use rdocx_svg_poc::{EditPath, delete_range_across, insert_at, render_with_hits};
+use rdoc_core::{EditPath, delete_range_across, insert_at, render_with_hits};
 
 fn main() {
     let mut doc = rdocx::Document::new();
