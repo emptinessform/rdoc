@@ -37,6 +37,10 @@
   <label title="글자 크기 (pt)">크기
     <input type="number" id="fontsize" min="6" max="96" step="1" style="width:3.2em" placeholder="pt">
   </label>
+  <label title="이미지 삽입 (캐럿 위치)">
+    <button id="imgbtn">이미지</button>
+    <input type="file" id="imgfile" accept="image/*" style="display:none">
+  </label>
   <select id="parastyle" title="문단 스타일">
     <option value="" selected disabled>스타일</option>
     <option value="Normal">본문</option>
@@ -370,8 +374,37 @@
     });
   }
 
-  document.addEventListener("paste", (e) => {
+  async function insertImageBytes(bytes, name) {
+    if (!caret || !caret.path.startsWith("d/")) {
+      report("이미지: 본문에 캐럿을 두세요");
+      return;
+    }
+    const at = { ...caret };
+    edit(() => {
+      const json = conv.insert_image(at.path, at.off, bytes, name);
+      caret = at; // zero text chars: the offset stays valid
+      sel = null;
+      return json;
+    });
+  }
+
+  const imgfileEl = document.getElementById("imgfile");
+  document.getElementById("imgbtn").onclick = () => imgfileEl.click();
+  imgfileEl.addEventListener("change", async () => {
+    const f = imgfileEl.files[0];
+    imgfileEl.value = "";
+    if (!f) return;
+    insertImageBytes(new Uint8Array(await f.arrayBuffer()), f.name);
+  });
+
+  document.addEventListener("paste", async (e) => {
     if (e.target === findq || e.target === replq) return;
+    const img = e.clipboardData && [...(e.clipboardData.files || [])].find((f) => f.type.startsWith("image/"));
+    if (img) {
+      e.preventDefault();
+      insertImageBytes(new Uint8Array(await img.arrayBuffer()), img.name || "pasted.png");
+      return;
+    }
     const text = e.clipboardData && e.clipboardData.getData("text/plain");
     if (text == null) return;
     e.preventDefault();
@@ -1489,6 +1522,7 @@
     align: alignSelection,
     tableOp,
     setStyle: styleSelection,
+    insertImage: insertImageBytes,
     fontSize: applyFontSize,
     fmtOn: (ranges, f) => conv.ranges_format_on(JSON.stringify(ranges), f),
     thumbs: () => ({

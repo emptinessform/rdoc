@@ -412,6 +412,26 @@ impl SvgConverter {
         self.mutate(move |d| crate::split_at(d, &at, offset), "split")
     }
 
+    /// Insert an inline image at (Document-story path, char offset). Native
+    /// size, scaled down to at most 300pt wide. One history entry.
+    pub fn insert_image(
+        &mut self,
+        path: &str,
+        offset: usize,
+        data: &[u8],
+        filename: &str,
+    ) -> Result<String, JsValue> {
+        let Some(crate::EditPath::Doc(children)) = parse_edit_path(path) else {
+            return Err(err("images can only be inserted in the document body"));
+        };
+        let data = data.to_vec();
+        let filename = filename.to_owned();
+        self.mutate(
+            move |d| d.insert_image_at(&children, offset, &data, &filename, 300.0),
+            "insert image",
+        )
+    }
+
     /// Set the paragraph style for every path in the JSON string array, as
     /// one history entry.
     pub fn set_style_paths(&mut self, json: &str, style_id: &str) -> Result<String, JsValue> {
