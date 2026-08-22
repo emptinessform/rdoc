@@ -698,6 +698,31 @@ mod edit_tests {
     }
 
     #[test]
+    fn body_selection_spanning_a_table_deletes_it() {
+        let mut doc = Document::new();
+        doc.add_paragraph("앞 문단");
+        let mut table = doc.add_table(1, 1);
+        if let Some(mut cell) = table.cell(0, 0) {
+            cell.set_text("셀 텍스트");
+        }
+        doc.add_paragraph("뒤 문단");
+        let fn_id = doc
+            .insert_footnote_ref_at(&[1, 0, 0, 0], 2)
+            .expect("footnote ref inside the cell");
+
+        let a = EditPath::Doc(vec![0]);
+        let b = EditPath::Doc(vec![2]);
+        assert!(delete_range_across(&mut doc, &a, 2, &b, 2));
+        assert_eq!(texts(&doc), vec!["앞 문단".to_owned()], "table removed, ends merged");
+        assert_eq!(
+            doc.footnote_paragraph_text(fn_id, 0),
+            None,
+            "note referenced inside the deleted table goes with it"
+        );
+        roundtrip(&mut doc);
+    }
+
+    #[test]
     fn insert_then_delete_restores_text() {
         let mut doc = build_demo_doc();
         let before = texts(&doc);
@@ -1708,6 +1733,11 @@ pub fn delete_range_across(
     if ka != kb || ib <= ia {
         return false;
     }
+    // Top-level body ranges may have whole tables between the endpoints;
+    // Word deletes those with the selection, so they take a separate route
+    // that removes middle contents outright instead of clearing paragraphs.
+    let body_top = matches!((at_a, at_b), (EditPath::Doc(a), EditPath::Doc(b))
+        if a.len() == 1 && b.len() == 1);
     // Notes whose reference marker falls inside the range go first (their
     // reference runs carry no text, so char offsets are unaffected).
     let mut doomed: Vec<(bool, i32)> = Vec::new();
@@ -1720,14 +1750,37 @@ pub fn delete_range_across(
     };
     collect(covered_note_refs(doc, at_a, Some(oa), None), &mut doomed);
     for i in ia + 1..ib {
-        collect(
-            covered_note_refs(doc, &at_sibling(at_a, i), None, None),
-            &mut doomed,
-        );
+        if body_top {
+            collect(doc.note_refs_in_content(i), &mut doomed);
+        } else {
+            collect(
+                covered_note_refs(doc, &at_sibling(at_a, i), None, None),
+                &mut doomed,
+            );
+        }
     }
     collect(covered_note_refs(doc, at_b, None, Some(ob)), &mut doomed);
     if !remove_notes(doc, &doomed) {
         return false;
+    }
+    if body_top {
+        let Some(len_a) = text_at(doc, at_a).map(|t| t.chars().count()) else {
+            return false;
+        };
+        if !delete_range_at(doc, at_a, oa.min(len_a), len_a) {
+            return false;
+        }
+        if !delete_range_at(doc, at_b, 0, ob) {
+            return false;
+        }
+        // Remove everything between the endpoints — paragraphs and whole
+        // tables alike — then merge the trimmed tail into the head.
+        for _ in ia + 1..ib {
+            if !doc.remove_content(ia + 1) {
+                return false;
+            }
+        }
+        return merge_at(doc, &at_sibling(at_a, ia + 1));
     }
     let Some(len_a) = text_at(doc, at_a).map(|t| t.chars().count()) else {
         return false;

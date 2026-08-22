@@ -125,3 +125,38 @@ S8 백로그의 마지막 UX 소품. 전부 index.html JS만.
   분할)이었고 기능은 정상 — 오프셋 커버 세그먼트 기반 xAt로 수정.
 - 회귀 그린: cellsel / en / noteops / enops / shift / ime / roundtrip.
 - 포크 rev a9f10ee 고정, 네이티브 릴리스 빌드 확인.
+
+---
+
+# S10-4: 표를 가로지르는 본문 선택 — 표째 삭제 (Word 동작)
+
+## 목표·범위
+
+선택 편집의 마지막 백로그. 본문 최상위 선택이 표를 사이에 두면 종전엔
+원자적 거부 → Word처럼 표(및 중간 문단)를 통째 삭제하고 양끝을 병합.
+
+## 구현 (포크 7c114e8 + rdoc)
+
+- 포크: `Document::note_refs_in_content(body_index)` — 문단 또는
+  표(중첩 포함) 안의 모든 노트 참조 열거. 삭제될 표 안에서 참조된
+  노트도 같이 지우기 위함.
+- lib.rs `delete_range_across`: 양끝이 본문 최상위(children.len()==1)면
+  별도 경로 — 노트 수집(머리 pos>oa / 중간 콘텐츠 전체 / 꼬리 pos<ob)
+  → 노트 제거 → 머리·꼬리 트림 → 중간 콘텐츠를 `remove_content`로
+  통째 제거(문단·표 동일) → 병합. 본문 최상위의 형제 인덱스가 곧 body
+  content 인덱스라 표가 끼어도 산술이 그대로 성립.
+- JS 변경 없음 (siblings 분기가 이미 d/N↔d/M을 이 경로로 보냄).
+
+## 검증 (실측)
+
+- 네이티브 단위 테스트 `body_selection_spanning_a_table_deletes_it`:
+  문단/표(셀에 각주 참조)/문단 → across 삭제 = 표 제거·양끝 병합·표 안
+  참조 각주 소거·왕복.
+- 브라우저 프로브: d/9[1..]→d/11[..2] (사이에 데모 표) 삭제 = 병합
+  "Lend of PoC page —" 정확, d/10·셀 경로 소멸, undo 1회에 표·셀 텍스트
+  포함 전체 복원.
+- 회귀 그린: cellsel / notesel / shift / ime / roundtrip / split.
+- 포크 rev 7c114e8 고정, 네이티브 릴리스 빌드 확인.
+
+이로써 선택 편집 백로그 소진 — 같은 문단 / 형제 문단(전 스토리) /
+셀 간 scatter / 표 포함 본문, 노트 마커 삭제까지 Word 의미론 정합.
