@@ -37,7 +37,9 @@ pub struct SvgConverter {
 #[derive(serde::Serialize)]
 struct RenderOut {
     total: usize,
-    pages: Vec<(usize, String)>,
+    /// 0-based indices of pages whose content changed; the page pulls each
+    /// SVG on demand via `page_svg`, visible pages first.
+    changed: Vec<usize>,
     hits: Vec<(usize, Vec<HitRun>)>,
     can_undo: bool,
     can_redo: bool,
@@ -96,12 +98,26 @@ impl SvgConverter {
         let delta = render_delta(&layout, &mut self.cache);
         serde_json::to_string(&RenderOut {
             total: delta.total_pages,
-            pages: delta.pages,
+            changed: delta.changed_pages,
             hits: delta.hits,
             can_undo: !self.undo.is_empty(),
             can_redo: !self.redo.is_empty(),
         })
         .map_err(err)
+    }
+
+    /// SVG for one page of the current document (0-based). The layout is
+    /// cached, so pulling pages one by one after `render` costs only the
+    /// SVG string generation for that page.
+    pub fn page_svg(&mut self, index: usize) -> Result<String, JsValue> {
+        let doc = self.doc.as_ref().ok_or_else(|| err("no document loaded"))?;
+        let fonts: Vec<(&str, &[u8])> = self
+            .fonts
+            .iter()
+            .map(|(family, data)| (family.as_str(), data.as_slice()))
+            .collect();
+        let layout = doc.layout_with_fonts_and_bundled_fallback(&fonts).map_err(err)?;
+        crate::render_page_svg(&layout, index).ok_or_else(|| err("page out of range"))
     }
 
     fn checkpoint(&mut self) -> Result<(), JsValue> {

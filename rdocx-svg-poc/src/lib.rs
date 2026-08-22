@@ -877,10 +877,13 @@ impl RenderCache {
 /// Pages and hit runs that changed since the cache was last updated.
 pub struct RenderDelta {
     pub total_pages: usize,
-    /// (0-based page index, svg) for pages whose content changed.
-    pub pages: Vec<(usize, String)>,
+    /// 0-based indices of pages whose content changed. SVG strings are not
+    /// generated here — callers pull them per page via [`render_page_svg`],
+    /// so off-screen pages can defer that cost entirely.
+    pub changed_pages: Vec<usize>,
     /// (0-based page index, runs) for pages whose hit map changed — a
-    /// superset of `pages` when paragraph indices shift without reflow.
+    /// superset of `changed_pages` when paragraph indices shift without
+    /// reflow.
     pub hits: Vec<(usize, Vec<HitRun>)>,
 }
 
@@ -1017,12 +1020,13 @@ pub fn render_delta(layout: &rdocx::WordLayoutResult, cache: &mut RenderCache) -
         }
     }
 
-    // Pass 2: SVG only for structurally changed pages.
+    // Pass 2: detect structurally changed pages (hash only — SVG is pulled
+    // lazily per page by the caller).
     cache.element_hashes.resize(n, 0);
     cache.hit_hashes.resize(n, 0);
     let mut delta = RenderDelta {
         total_pages: n,
-        pages: Vec::new(),
+        changed_pages: Vec::new(),
         hits: Vec::new(),
     };
     for (i, page) in layout.layout.pages.iter().enumerate() {
@@ -1032,10 +1036,9 @@ pub fn render_delta(layout: &rdocx::WordLayoutResult, cache: &mut RenderCache) -
         hash_elements(&page.elements, &mut h);
         if cache.element_hashes[i] != h.0 {
             cache.element_hashes[i] = h.0;
-            delta.pages.push((i, renderer.render_page(page)));
+            delta.changed_pages.push(i);
         }
     }
-    let _ = renderer.take_hits(); // pass-2 duplicates; already collected
 
     for (i, runs) in by_page.into_iter().enumerate() {
         let mut buf = String::new();
@@ -1049,6 +1052,14 @@ pub fn render_delta(layout: &rdocx::WordLayoutResult, cache: &mut RenderCache) -
         }
     }
     delta
+}
+
+/// Render one page of a layout to a standalone SVG string — the lazy
+/// counterpart of [`render_delta`]'s change detection.
+pub fn render_page_svg(layout: &rdocx::WordLayoutResult, index: usize) -> Option<String> {
+    let page = layout.layout.pages.get(index)?;
+    let mut renderer = SvgRenderer::new(&layout.layout.fonts);
+    Some(renderer.render_page(page))
 }
 
 /// Resolution of rendered run segments to their source paragraphs, via the
