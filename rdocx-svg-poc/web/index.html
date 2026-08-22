@@ -36,7 +36,7 @@
     <button id="findclose" title="닫기 (Esc)">✕</button>
   </span>
   <span id="status">loading wasm…</span>
-  <span id="hint">click: caret · drag: select · type/Enter/Backspace/화살표 · Ctrl+B/I/U · Ctrl+Z/Y · Ctrl+C · Ctrl+F 찾기/H 바꾸기 · Ctrl+Alt+F 각주/E 미주/D 삭제 · 한글 IME</span>
+  <span id="hint">click: caret · drag: select · type/Enter/Backspace/화살표 · Ctrl+B/I/U · Ctrl+Z/Y · Ctrl+C/X/V · Ctrl+F 찾기/H 바꾸기 · Ctrl+Alt+F 각주/E 미주/D 삭제 · 한글 IME</span>
 </header>
 <div id="pages"></div>
 <input id="ime" autocomplete="off" style="position:fixed; top:0; left:-9999px; width:100px; opacity:0">
@@ -517,6 +517,13 @@
     lastCopied = text;
     try { await navigator.clipboard.writeText(text); } catch (e) { /* headless */ }
     report(`copied ${chars(text).length} chars`);
+  }
+
+  // Cut = copy, then the ordinary selection deletion (one history entry).
+  function cutSelection() {
+    if (!sel) return;
+    copySelection();
+    deleteSel();
   }
 
   // ---- mouse ---------------------------------------------------------------
@@ -1014,6 +1021,7 @@
     }
     if (e.key === "Escape" && !findbar.hidden) { e.preventDefault(); closeFind(); return; }
     if (ctrl && key === "c") { e.preventDefault(); copySelection(); return; }
+    if (ctrl && key === "x") { e.preventDefault(); cutSelection(); return; }
     if (ctrl && key === "a") { e.preventDefault(); selectAll(); return; }
     if (ctrl && key === "z" && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
     if (ctrl && (key === "y" || (key === "z" && e.shiftKey))) { e.preventDefault(); doRedo(); return; }
@@ -1251,6 +1259,7 @@
       return selectedText();
     },
     copy: () => { copySelection(); return lastCopied; },
+    cut: () => { cutSelection(); return lastCopied; },
     selText: selectedText,
     setZoom: (z) => { zoom = z; applyZoom(); },
     loadUrl: async (u) => {
