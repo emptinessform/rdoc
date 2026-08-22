@@ -10,8 +10,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     HitRun, RenderCache, body_order_of, delete_char_at, delete_range, delete_range_at,
-    insert_text_at, parse_doc_path, parse_edit_path, render_delta, split_paragraph, text_at,
-    toggle_at,
+    insert_text_at, parse_doc_path, parse_edit_path, render_delta, text_at, toggle_at,
 };
 
 const UNDO_CAP: usize = 100;
@@ -282,40 +281,57 @@ impl SvgConverter {
         )
     }
 
-    /// Split a body paragraph at a char offset (Enter). Table-cell
-    /// paragraphs cannot split yet.
+    /// Split the paragraph at any editable hit path at a char offset
+    /// (Enter). Endnotes are not supported yet.
     pub fn split(&mut self, path: &str, offset: usize) -> Result<String, JsValue> {
-        let Some(children) = parse_doc_path(path) else {
+        let Some(at) = parse_edit_path(path) else {
             return Err(err("not an editable location"));
         };
-        if children.len() != 1 {
-            return Err(err("Enter inside a table cell is not supported yet"));
-        }
         self.mutate(
-            move |d| {
-                let Some(order) = body_order_of(d, children[0]) else {
-                    return false;
-                };
-                split_paragraph(d, order, offset)
+            move |d| match &at {
+                crate::EditPath::Doc(children) => d.split_paragraph_at_path(children, offset),
+                crate::EditPath::HeaderFooter {
+                    is_header,
+                    rel_id,
+                    para,
+                } => d.split_header_footer_paragraph(*is_header, rel_id, *para, offset),
+                crate::EditPath::Note {
+                    is_footnote: true,
+                    id,
+                    para,
+                } => d.split_footnote_paragraph(*id, *para, offset),
+                crate::EditPath::Note {
+                    is_footnote: false,
+                    ..
+                } => false,
             },
             "split",
         )
     }
 
-    /// Merge a body paragraph into the previous one (Backspace at offset 0).
+    /// Merge the paragraph at any editable hit path into its previous
+    /// sibling in the same container (Backspace at offset 0).
     pub fn merge(&mut self, path: &str) -> Result<String, JsValue> {
-        let Some(children) = parse_doc_path(path) else {
+        let Some(at) = parse_edit_path(path) else {
             return Err(err("not an editable location"));
         };
-        if children.len() != 1 {
-            return Err(err("merge inside a table cell is not supported yet"));
-        }
         self.mutate(
-            move |d| {
-                let Some(order) = body_order_of(d, children[0]) else {
-                    return false;
-                };
-                crate::merge_paragraph_into_prev(d, order)
+            move |d| match &at {
+                crate::EditPath::Doc(children) => d.merge_paragraph_at_path(children),
+                crate::EditPath::HeaderFooter {
+                    is_header,
+                    rel_id,
+                    para,
+                } => d.merge_header_footer_paragraph(*is_header, rel_id, *para),
+                crate::EditPath::Note {
+                    is_footnote: true,
+                    id,
+                    para,
+                } => d.merge_footnote_paragraph(*id, *para),
+                crate::EditPath::Note {
+                    is_footnote: false,
+                    ..
+                } => false,
             },
             "merge",
         )

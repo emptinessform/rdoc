@@ -372,23 +372,34 @@
     });
   }
 
+  // "d/8.1.0.0" -> "d/8.1.0.1", "h/rId1/0" -> "h/rId1/1": a split's tail is
+  // always the next sibling, so bump the final path segment.
+  function siblingPath(path, delta) {
+    const m = path.match(/^(.*?)(\d+)$/);
+    if (!m) return null;
+    const n = +m[2] + delta;
+    return n < 0 ? null : m[1] + n;
+  }
+
   function enterKey() {
     if (!caret) return;
     edit(() => {
-      const order = conv.path_order(caret.path);
       const json = conv.split(caret.path, caret.off);
-      caret = order == null ? null : { path: conv.order_path(order + 1), off: 0 };
+      caret = { path: siblingPath(caret.path, +1), off: 0 };
       return json;
     });
   }
 
   function mergePrev() {
-    const order = caret ? conv.path_order(caret.path) : null;
-    if (order == null || order === 0) return;
-    const prevLen = chars(conv.paragraph_texts()[order - 1] || "").length;
+    if (!caret) return;
+    const prevPath = siblingPath(caret.path, -1);
+    if (prevPath == null) return;
+    const prevText = conv.paragraph_text_at(prevPath);
+    if (prevText == null) return; // previous sibling is a table or missing
+    const prevLen = chars(prevText).length;
     edit(() => {
       const json = conv.merge(caret.path);
-      caret = { path: conv.order_path(order - 1), off: prevLen };
+      caret = { path: prevPath, off: prevLen };
       return json;
     });
   }
@@ -424,7 +435,7 @@
     } else if (e.key === "Backspace") {
       e.preventDefault();
       if (selRange()) deleteSel();
-      else if (caret && caret.off === 0 && conv.path_order(caret.path) > 0) mergePrev();
+      else if (caret && caret.off === 0) mergePrev();
       else if (caret) backspace();
     } else if (e.key === "Enter") {
       e.preventDefault();
@@ -496,7 +507,10 @@
   window.__t = {
     clickAt,
     type: typeText,
-    backspace,
+    backspace: () => {
+      if (caret && caret.off === 0) mergePrev();
+      else backspace();
+    },
     enter: enterKey,
     deleteSel,
     replaceSel: replaceSelWith,
