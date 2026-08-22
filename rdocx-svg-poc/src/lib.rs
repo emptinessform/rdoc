@@ -38,6 +38,8 @@ pub fn render_layout_to_svg(layout: &LayoutResult) -> Vec<String> {
 /// and tables. Shared by the native binary and the wasm demo button.
 pub fn build_demo_doc() -> Document {
     let mut doc = Document::new();
+    doc.set_header("rdoc demo — 머리글도 편집됩니다");
+    doc.set_footer_page_number("Page ");
 
     doc.add_paragraph("rdocx SVG Rendering PoC").style("Heading1");
 
@@ -1048,6 +1050,134 @@ pub fn parse_doc_path(path: &str) -> Option<Vec<usize>> {
     rest.split('.').map(|c| c.parse().ok()).collect()
 }
 
+/// An editable location parsed from a hit path: a Document-story source
+/// path, or one paragraph of a header/footer part.
+pub enum EditPath {
+    Doc(Vec<usize>),
+    HeaderFooter {
+        is_header: bool,
+        rel_id: String,
+        para: usize,
+    },
+}
+
+/// Parse any editable hit path ("d/…", "h/rId3/0", "f/rId4/0"). Footnote
+/// and endnote stories return None: not editable yet.
+pub fn parse_edit_path(path: &str) -> Option<EditPath> {
+    if let Some(children) = parse_doc_path(path) {
+        return Some(EditPath::Doc(children));
+    }
+    let (is_header, rest) = if let Some(rest) = path.strip_prefix("h/") {
+        (true, rest)
+    } else if let Some(rest) = path.strip_prefix("f/") {
+        (false, rest)
+    } else {
+        return None;
+    };
+    let (rel_id, para) = rest.rsplit_once('/')?;
+    Some(EditPath::HeaderFooter {
+        is_header,
+        rel_id: rel_id.to_owned(),
+        para: para.parse().ok()?,
+    })
+}
+
+/// Apply a paragraph-text edit at any editable location.
+pub fn edit_text_at(doc: &mut Document, at: &EditPath, edit: impl Fn(&str) -> Option<String>) -> bool {
+    match at {
+        EditPath::Doc(children) => {
+            let Some(mut p) = doc.paragraph_at_path_mut(children) else {
+                return false;
+            };
+            apply_text_edit(&mut p, edit)
+        }
+        EditPath::HeaderFooter {
+            is_header,
+            rel_id,
+            para,
+        } => doc
+            .with_header_footer_paragraph_mut(*is_header, rel_id, *para, |mut p| {
+                apply_text_edit(&mut p, edit)
+            })
+            .unwrap_or(false),
+    }
+}
+
+/// Delete [start, end) at any editable location.
+pub fn delete_range_at(doc: &mut Document, at: &EditPath, start: usize, end: usize) -> bool {
+    match at {
+        EditPath::Doc(children) => delete_range_in_para_path(doc, children, start, end),
+        EditPath::HeaderFooter {
+            is_header,
+            rel_id,
+            para,
+        } => doc
+            .with_header_footer_paragraph_mut(*is_header, rel_id, *para, |mut p| {
+                delete_range_in(&mut p, start, end)
+            })
+            .unwrap_or(false),
+    }
+}
+
+/// Toggle bold/italic/underline at any editable location.
+pub fn toggle_at(doc: &mut Document, at: &EditPath, start: usize, end: usize, fmt: char) -> bool {
+    match at {
+        EditPath::Doc(children) => toggle_format_path(doc, children, start, end, fmt),
+        EditPath::HeaderFooter {
+            is_header,
+            rel_id,
+            para,
+        } => doc
+            .with_header_footer_paragraph_mut(*is_header, rel_id, *para, |mut p| {
+                toggle_in(&mut p, start, end, fmt)
+            })
+            .unwrap_or(false),
+    }
+}
+
+/// Insert text at a character offset at any editable location.
+pub fn insert_text_at(doc: &mut Document, at: &EditPath, char_off: usize, s: &str) -> bool {
+    edit_text_at(doc, at, |text| {
+        let b = char_to_byte(text, char_off.min(text.chars().count()));
+        let mut nt = String::with_capacity(text.len() + s.len());
+        nt.push_str(&text[..b]);
+        nt.push_str(s);
+        nt.push_str(&text[b..]);
+        Some(nt)
+    })
+}
+
+/// Backspace at any editable location.
+pub fn delete_char_at(doc: &mut Document, at: &EditPath, char_off: usize) -> bool {
+    if char_off == 0 {
+        return false;
+    }
+    edit_text_at(doc, at, |text| {
+        let n = text.chars().count();
+        if char_off > n {
+            return None;
+        }
+        let b0 = char_to_byte(text, char_off - 1);
+        let b1 = char_to_byte(text, char_off);
+        let mut nt = String::with_capacity(text.len());
+        nt.push_str(&text[..b0]);
+        nt.push_str(&text[b1..]);
+        Some(nt)
+    })
+}
+
+/// Paragraph text at any editable location.
+pub fn text_at(doc: &Document, at: &EditPath) -> Option<String> {
+    match at {
+        EditPath::Doc(children) => doc.paragraph_text_at_path(children),
+        EditPath::HeaderFooter {
+            is_header,
+            rel_id,
+            para,
+        } => doc.header_footer_paragraph_text(*is_header, rel_id, *para),
+    }
+}
+
 /// paragraphs()-order index of the body paragraph at `body_index`, for the
 /// order-addressed operations (split, merge, cross-paragraph ranges).
 pub fn body_order_of(doc: &Document, body_index: usize) -> Option<usize> {
@@ -1137,12 +1267,17 @@ pub fn delete_range_in_para_path(
     start: usize,
     end: usize,
 ) -> bool {
-    if end <= start {
-        return true;
-    }
     let Some(mut p) = doc.paragraph_at_path_mut(children) else {
         return false;
     };
+    delete_range_in(&mut p, start, end)
+}
+
+/// Delete [start, end) inside one already-resolved paragraph.
+fn delete_range_in(p: &mut rdocx::Paragraph<'_>, start: usize, end: usize) -> bool {
+    if end <= start {
+        return true;
+    }
     let mut acc = 0usize;
     for j in 0..p.run_count() {
         let t = p.run(j).map(|r| r.text()).unwrap_or_default();
@@ -1379,12 +1514,17 @@ pub fn toggle_format_path(
     end: usize,
     fmt: char,
 ) -> bool {
-    if end <= start {
-        return false;
-    }
     let Some(mut p) = doc.paragraph_at_path_mut(children) else {
         return false;
     };
+    toggle_in(&mut p, start, end, fmt)
+}
+
+/// Toggle a format over [start, end) inside one already-resolved paragraph.
+fn toggle_in(p: &mut rdocx::Paragraph<'_>, start: usize, end: usize, fmt: char) -> bool {
+    if end <= start {
+        return false;
+    }
     // Split at the end boundary first so earlier indices stay valid.
     let (j2, o2) = locate(&p, end);
     p.split_run(j2, o2);
@@ -1439,6 +1579,11 @@ fn edit_paragraph_at(
     let Some(mut p) = doc.paragraph_at_path_mut(children) else {
         return false;
     };
+    apply_text_edit(&mut p, edit)
+}
+
+/// Apply a whole-paragraph text edit inside one already-resolved paragraph.
+fn apply_text_edit(p: &mut rdocx::Paragraph<'_>, edit: impl Fn(&str) -> Option<String>) -> bool {
     // Reconstruct the paragraph text run-by-run and apply the edit to the
     // concatenation, then write back only the runs whose text changed.
     let n = p.run_count();

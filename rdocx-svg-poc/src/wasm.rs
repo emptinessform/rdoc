@@ -9,9 +9,9 @@
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    HitRun, RenderCache, body_order_of, delete_char_before_path, delete_range,
-    delete_range_in_para_path, insert_at_path, parse_doc_path, render_delta, split_paragraph,
-    toggle_format_path,
+    HitRun, RenderCache, body_order_of, delete_char_at, delete_range, delete_range_at,
+    insert_text_at, parse_doc_path, parse_edit_path, render_delta, split_paragraph, text_at,
+    toggle_at,
 };
 
 const UNDO_CAP: usize = 100;
@@ -162,25 +162,19 @@ impl SvgConverter {
     /// Insert text at (source path, char offset), then re-render. Paths are
     /// the Document-story hit paths ("d/12" body, "d/12.0.1.0" table cell).
     pub fn insert(&mut self, path: &str, offset: usize, text: &str) -> Result<String, JsValue> {
-        let Some(children) = parse_doc_path(path) else {
+        let Some(at) = parse_edit_path(path) else {
             return Err(err("not an editable location"));
         };
         let text = text.to_owned();
-        self.mutate(
-            move |d| insert_at_path(d, &children, offset, &text),
-            "insert",
-        )
+        self.mutate(move |d| insert_text_at(d, &at, offset, &text), "insert")
     }
 
     /// Delete the character before (source path, char offset).
     pub fn delete(&mut self, path: &str, offset: usize) -> Result<String, JsValue> {
-        let Some(children) = parse_doc_path(path) else {
+        let Some(at) = parse_edit_path(path) else {
             return Err(err("not an editable location"));
         };
-        self.mutate(
-            move |d| delete_char_before_path(d, &children, offset),
-            "delete",
-        )
+        self.mutate(move |d| delete_char_at(d, &at, offset), "delete")
     }
 
     /// Delete an arbitrary range. Within one paragraph (body or table cell)
@@ -192,15 +186,18 @@ impl SvgConverter {
         pb: &str,
         ob: usize,
     ) -> Result<String, JsValue> {
-        let (Some(ca), Some(cb)) = (parse_doc_path(pa), parse_doc_path(pb)) else {
-            return Err(err("not an editable location"));
-        };
-        if ca == cb {
+        if pa == pb {
+            let Some(at) = parse_edit_path(pa) else {
+                return Err(err("not an editable location"));
+            };
             return self.mutate(
-                move |d| delete_range_in_para_path(d, &ca, oa.min(ob), oa.max(ob)),
+                move |d| delete_range_at(d, &at, oa.min(ob), oa.max(ob)),
                 "delete range",
             );
         }
+        let (Some(ca), Some(cb)) = (parse_doc_path(pa), parse_doc_path(pb)) else {
+            return Err(err("not an editable location"));
+        };
         if ca.len() != 1 || cb.len() != 1 {
             return Err(err(
                 "selection edits across table cells are not supported yet",
@@ -226,14 +223,14 @@ impl SvgConverter {
         end: usize,
         text: &str,
     ) -> Result<String, JsValue> {
-        let Some(children) = parse_doc_path(path) else {
+        let Some(at) = parse_edit_path(path) else {
             return Err(err("not an editable location"));
         };
         let text = text.to_owned();
         self.mutate(
             move |d| {
-                delete_range_in_para_path(d, &children, start, end)
-                    && (text.is_empty() || insert_at_path(d, &children, start, &text))
+                delete_range_at(d, &at, start, end)
+                    && (text.is_empty() || insert_text_at(d, &at, start, &text))
             },
             "replace",
         )
@@ -286,13 +283,10 @@ impl SvgConverter {
         end: usize,
         fmt: char,
     ) -> Result<String, JsValue> {
-        let Some(children) = parse_doc_path(path) else {
+        let Some(at) = parse_edit_path(path) else {
             return Err(err("not an editable location"));
         };
-        self.mutate(
-            move |d| toggle_format_path(d, &children, start, end, fmt),
-            "toggle",
-        )
+        self.mutate(move |d| toggle_at(d, &at, start, end, fmt), "toggle")
     }
 
     /// paragraphs()-order index of a body hit path, for caret arithmetic
@@ -312,10 +306,10 @@ impl SvgConverter {
         Some(format!("d/{body_index}"))
     }
 
-    /// Text of the paragraph at a Document-story hit path.
+    /// Text of the paragraph at any editable hit path.
     pub fn paragraph_text_at(&self, path: &str) -> Option<String> {
-        let children = parse_doc_path(path)?;
-        self.doc.as_ref()?.paragraph_text_at_path(&children)
+        let at = parse_edit_path(path)?;
+        text_at(self.doc.as_ref()?, &at)
     }
 
     pub fn undo(&mut self) -> Result<String, JsValue> {

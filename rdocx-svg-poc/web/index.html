@@ -292,10 +292,10 @@
       report(`segment ${JSON.stringify(h.text)} is decorative (marker/field) — not editable`);
       return;
     }
-    if (!h.path.startsWith("d/")) {
+    if (!/^(d|h|f)\//.test(h.path)) {
       caret = null;
       drawCaret();
-      report(`${h.path}: header/footnote editing is a later stage`);
+      report(`${h.path}: footnote editing is a later stage`);
       return;
     }
     caret = { path: h.path, off: h.start + k };
@@ -312,7 +312,8 @@
     if (!sel) return null;
     const A = getRun(sel.a), B = getRun(sel.b);
     if (!A || !B || A.path === null || B.path === null) return null;
-    if (!A.path.startsWith("d/") || !B.path.startsWith("d/")) return null;
+    const editable = (p) => /^(d|h|f)\//.test(p);
+    if (!editable(A.path) || !editable(B.path)) return null;
     let pa = A.path, oa = A.start + sel.a.k, pb = B.path, ob = B.start + sel.b.k;
     if (pa === pb) {
       if (ob < oa) [oa, ob] = [ob, oa];
