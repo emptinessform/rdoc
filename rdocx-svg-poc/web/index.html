@@ -10,6 +10,14 @@
   #hint { color: #aaa; font-size: 12px; }
   #pages { display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 24px; }
   #pages svg { background: #fff; box-shadow: 0 3px 12px rgba(0,0,0,.45); height: auto; cursor: text; user-select: none; }
+  #thumbs { position: fixed; left: 0; top: 64px; bottom: 0; width: 132px;
+    overflow-y: auto; background: #33363c; padding: 10px 8px; z-index: 1;
+    display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  #thumbs img { width: 108px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5);
+    cursor: pointer; display: block; }
+  #thumbs .cur { outline: 2px solid #1a73e8; }
+  #thumbs .pageno { color: #aaa; font-size: 11px; margin: -4px 0 2px; }
+  body.thumbs-open #pages { margin-left: 132px; }
   .caret { animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
 </style>
@@ -18,6 +26,7 @@
   <button id="demo">Load demo</button>
   <label><input type="file" id="file" accept=".docx"></label>
   <button id="save">Save .docx</button>
+  <button id="thumbtoggle" title="페이지 목록">🗂</button>
   <label>zoom <select id="zoom">
     <option value="0.75">75%</option>
     <option value="1" selected>100%</option>
@@ -46,6 +55,7 @@
   <span id="status">loading wasm…</span>
   <span id="hint">click: caret · drag: select · type/Enter/Backspace/화살표 · Ctrl+B/I/U · Ctrl+L/E/R 정렬 · Ctrl+Z/Y · Ctrl+C/X/V · Ctrl+F 찾기/H 바꾸기 · Ctrl+Alt+F 각주/E 미주/D 삭제 · 한글 IME</span>
 </header>
+<div id="thumbs" hidden></div>
 <div id="pages"></div>
 <input id="ime" autocomplete="off" style="position:fixed; top:0; left:-9999px; width:100px; opacity:0">
 <script type="module">
@@ -98,6 +108,7 @@
     const cur = pagesEl.children[i];
     if (cur) cur.outerHTML = svg;
     else pagesEl.insertAdjacentHTML("beforeend", svg);
+    if (thumbsOpen()) { thumbDirty.add(i); scheduleThumbs(); }
   }
 
   function pageNearViewport(i) {
@@ -125,6 +136,70 @@
     (window.requestIdleCallback || ((f) => setTimeout(f, 30)))(drainDirty);
   }
 
+  // ---- page thumbnails -----------------------------------------------------
+  // Sidebar minis are blob images of the page SVG strings already in the
+  // DOM, so no extra wasm rendering happens; changed pages re-blob on idle.
+  const thumbsEl = document.getElementById("thumbs");
+  const thumbDirty = new Set();
+  let thumbTimer = null;
+
+  function thumbsOpen() { return !thumbsEl.hidden; }
+
+  function refreshThumb(i) {
+    const page = pagesEl.children[i];
+    const img = thumbsEl.children[i] && thumbsEl.children[i].querySelector("img");
+    if (!page || !img) return;
+    const url = URL.createObjectURL(new Blob([page.outerHTML], { type: "image/svg+xml" }));
+    const old = img.src;
+    img.src = url;
+    if (old) URL.revokeObjectURL(old);
+  }
+
+  function syncThumbCount() {
+    const n = pagesEl.children.length;
+    while (thumbsEl.children.length > n) thumbsEl.lastChild.remove();
+    while (thumbsEl.children.length < n) {
+      const i = thumbsEl.children.length;
+      const cell = document.createElement("div");
+      const img = document.createElement("img");
+      img.onclick = () => pagesEl.children[i] && pagesEl.children[i].scrollIntoView({ block: "start" });
+      const no = document.createElement("div");
+      no.className = "pageno";
+      no.textContent = i + 1;
+      cell.appendChild(img);
+      cell.appendChild(no);
+      thumbsEl.appendChild(cell);
+      thumbDirty.add(i);
+    }
+  }
+
+  function scheduleThumbs() {
+    if (!thumbsOpen() || thumbTimer) return;
+    thumbTimer = setTimeout(() => {
+      thumbTimer = null;
+      const t0 = performance.now();
+      for (const i of [...thumbDirty].sort((a, b) => a - b)) {
+        // A page still deferred in dirtyPages would blob stale content —
+        // let the drain finish first and keep the thumb queued.
+        if (dirtyPages.has(i)) continue;
+        refreshThumb(i);
+        thumbDirty.delete(i);
+        if (performance.now() - t0 > 12) break;
+      }
+      if (thumbDirty.size) scheduleThumbs();
+    }, 60);
+  }
+
+  document.getElementById("thumbtoggle").onclick = () => {
+    thumbsEl.hidden = !thumbsEl.hidden;
+    document.body.classList.toggle("thumbs-open", !thumbsEl.hidden);
+    if (thumbsOpen()) {
+      syncThumbCount();
+      for (let i = 0; i < pagesEl.children.length; i++) thumbDirty.add(i);
+      scheduleThumbs();
+    }
+  };
+
   // Scrolling toward a deferred page must never show stale content: drain
   // anything near the viewport immediately.
   window.addEventListener("scroll", () => {
@@ -146,6 +221,7 @@
       else dirtyPages.add(i);
     }
     if (dirtyPages.size) scheduleDrain();
+    if (thumbsOpen()) { syncThumbCount(); scheduleThumbs(); }
     for (const [i, runs] of out.hits) pageHits[i] = runs;
     pageHits.length = out.total;
     lastMs = ms;
@@ -1359,6 +1435,13 @@
     align: alignSelection,
     fontSize: applyFontSize,
     fmtOn: (ranges, f) => conv.ranges_format_on(JSON.stringify(ranges), f),
+    thumbs: () => ({
+      open: !thumbsEl.hidden,
+      count: thumbsEl.children.length,
+      pending: thumbDirty.size,
+      withSrc: [...thumbsEl.querySelectorAll("img")].filter((i) => i.src).length,
+    }),
+    toggleThumbs: () => document.getElementById("thumbtoggle").click(),
     selRanges: selectionRanges,
     findState: () => ({
       open: !findbar.hidden,
