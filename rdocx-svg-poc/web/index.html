@@ -322,6 +322,14 @@
     const page = [...pagesEl.children].indexOf(svg) + 1;
     const pt = svgPoint(svg, e.clientX, e.clientY);
     const found = findHit(page, pt.x, pt.y);
+    if (e.detail >= 3 && found && found.hit.path !== null && found.hit.start !== null) {
+      // Triple-click: select the whole paragraph under the cursor.
+      const path = found.hit.path;
+      const len = chars(conv.paragraph_text_at(path) || "").length;
+      if (selectParaOffsets(path, 0, len)) report(`paragraph: ${path}`);
+      mouse = { svg, page, start: { x: e.clientX, y: e.clientY }, anchor: null, dragged: false, tripled: true };
+      return;
+    }
     mouse = {
       svg, page,
       start: { x: e.clientX, y: e.clientY },
@@ -329,13 +337,11 @@
       dragged: false,
     };
   });
-  pagesEl.addEventListener("mousemove", (e) => {
-    if (!mouse || !mouse.anchor) return;
-    if (!mouse.dragged && Math.hypot(e.clientX - mouse.start.x, e.clientY - mouse.start.y) < 4) return;
-    mouse.dragged = true;
-    const svg = e.target.closest("svg") || mouse.svg;
+  function extendDragTo(clientX, clientY) {
+    const el = document.elementFromPoint(clientX, clientY);
+    const svg = (el && el.closest("svg")) || mouse.svg;
     const page = [...pagesEl.children].indexOf(svg) + 1;
-    const pt = svgPoint(svg, e.clientX, e.clientY);
+    const pt = svgPoint(svg, clientX, clientY);
     const found = findHit(page, pt.x, pt.y);
     if (!found) return;
     sel = orderSel(mouse.anchor, { page: found.hit.page, idx: found.hit.id, k: found.k });
@@ -343,6 +349,29 @@
     drawCaret();
     drawSelection();
     report();
+  }
+
+  const SCROLL_EDGE = 28; // px from the viewport edge that triggers scrolling
+  function dragAutoScroll() {
+    if (!mouse || !mouse.dragged) { mouse && (mouse.raf = null); return; }
+    const y = mouse.lastY;
+    const dy = y < SCROLL_EDGE ? y - SCROLL_EDGE
+             : y > innerHeight - SCROLL_EDGE ? y - (innerHeight - SCROLL_EDGE) : 0;
+    if (dy) {
+      window.scrollBy(0, dy * 0.4);
+      extendDragTo(mouse.lastX, mouse.lastY);
+    }
+    mouse.raf = requestAnimationFrame(dragAutoScroll);
+  }
+
+  pagesEl.addEventListener("mousemove", (e) => {
+    if (!mouse || !mouse.anchor) return;
+    if (!mouse.dragged && Math.hypot(e.clientX - mouse.start.x, e.clientY - mouse.start.y) < 4) return;
+    mouse.dragged = true;
+    mouse.lastX = e.clientX;
+    mouse.lastY = e.clientY;
+    if (!mouse.raf) mouse.raf = requestAnimationFrame(dragAutoScroll);
+    extendDragTo(e.clientX, e.clientY);
   });
   pagesEl.addEventListener("dblclick", (e) => {
     const svg = e.target.closest("svg");
@@ -362,27 +391,34 @@
     let lo = off, hi = off + 1;
     while (lo > 0 && isWord(cs[lo - 1])) lo--;
     while (hi < cs.length && isWord(cs[hi])) hi++;
-    // Represent as a hit-ref selection within this paragraph: find runs
-    // covering lo/hi on any line of this paragraph.
-    const at = (offset, wantEnd) => {
-      for (const cand of allHits()) {
-        if (cand.path !== h.path || cand.start === null) continue;
-        const lo2 = cand.start, hi2 = cand.start + chars(cand.text).length;
-        if (offset >= lo2 && (offset < hi2 || (wantEnd && offset <= hi2)))
-          return { page: cand.page, idx: cand.id, k: offset - lo2 };
-      }
-      return null;
-    };
-    const a = at(lo, false), b = at(hi, true);
-    if (!a || !b) return;
+    if (selectParaOffsets(h.path, lo, hi))
+      report(`word: ${JSON.stringify(cs.slice(lo, hi).join(""))}`);
+  });
+
+  // Hit-ref for a character offset of one paragraph, on any of its lines.
+  function refForOffset(path, offset, wantEnd) {
+    for (const cand of allHits()) {
+      if (cand.path !== path || cand.start === null) continue;
+      const lo = cand.start, hi = cand.start + chars(cand.text).length;
+      if (offset >= lo && (offset < hi || (wantEnd && offset <= hi)))
+        return { page: cand.page, idx: cand.id, k: offset - lo };
+    }
+    return null;
+  }
+
+  function selectParaOffsets(path, lo, hi) {
+    const a = refForOffset(path, lo, false), b = refForOffset(path, hi, true);
+    if (!a || !b) return false;
     sel = orderSel(a, b);
     caret = null;
     drawCaret(); drawSelection();
-    report(`word: ${JSON.stringify(cs.slice(lo, hi).join(""))}`);
-  });
+    return true;
+  }
 
   window.addEventListener("mouseup", (e) => {
     if (!mouse) return;
+    if (mouse.raf) cancelAnimationFrame(mouse.raf);
+    if (mouse.tripled) { mouse = null; return; }
     if (!mouse.dragged) {
       const pt = svgPoint(mouse.svg, e.clientX, e.clientY);
       if (e.shiftKey && (caret || selAnchor)) {
@@ -749,15 +785,25 @@
     report();
   }
 
-  // The (path, off) one visual line above or below `pos`, or null.
+  // The story prefix ("d", "h", "f", "fn", "en") of a hit path, or null.
+  function storyOf(path) {
+    const m = path === null ? null : path.match(/^(d|h|f|fn|en)\//);
+    return m ? m[1] : null;
+  }
+
+  // The (path, off) one visual line above or below `pos`, or null. Only
+  // lines of the same story count: arrowing down from the last body line
+  // of a page skips headers/footers/notes and lands on the next page's body.
   function lineTarget(pos, dir) {
     const vis = visFor(pos);
     if (!vis) return null;
     const { hit: h, k } = vis;
+    const story = storyOf(h.path);
     const cx = h.x + cum(h, k);
     const half = 0.4 * h.size; // same-baseline tolerance
     let bestLine = null;
     const consider = (cand, yRef) => {
+      if (storyOf(cand.path) !== story) return;
       const dy = dir > 0 ? cand.y - yRef : yRef - cand.y;
       if (dy <= half) return; // same line or wrong direction
       if (bestLine === null || dy < bestLine - 1e-6) bestLine = dy;
@@ -776,6 +822,7 @@
       // Pass 2: on that baseline, nearest x.
       let best = null;
       for (const cand of pageHits[pg - 1] || []) {
+        if (storyOf(cand.path) !== story) continue;
         const dy = dir > 0 ? cand.y - yRefFor(pg) : yRefFor(pg) - cand.y;
         if (Math.abs(dy - bestLine) > half) continue;
         const x1 = cand.x, x2 = cand.x + width(cand);
