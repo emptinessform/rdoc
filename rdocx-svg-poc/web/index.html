@@ -25,6 +25,9 @@
     <option value="1.5">150%</option>
     <option value="2">200%</option>
   </select></label>
+  <label title="글자 크기 (pt)">크기
+    <input type="number" id="fontsize" min="6" max="96" step="1" style="width:3.2em" placeholder="pt">
+  </label>
   <span id="alignbtns">
     <button data-align="l" title="왼쪽 정렬 (Ctrl+L)">⮜</button>
     <button data-align="c" title="가운데 정렬 (Ctrl+E)">⬌</button>
@@ -551,6 +554,44 @@
     b.onclick = () => alignSelection(b.dataset.align);
   });
 
+  // Any selection as per-paragraph {path, start, end} ranges.
+  function selectionRanges() {
+    const r = selRange();
+    if (!r) return null;
+    if (r.kind === "scatter") return r.ranges;
+    if (r.kind === "same") return [{ path: r.pa, start: r.oa, end: r.ob }];
+    const idx = (pp) => +pp.match(/(\d+)$/)[1];
+    const out = [];
+    for (let i = idx(r.pa); i <= idx(r.pb); i++) {
+      const path = r.pa.replace(/\d+$/, i);
+      const len = chars(conv.paragraph_text_at(path) || "").length;
+      const start = i === idx(r.pa) ? r.oa : 0;
+      const end = i === idx(r.pb) ? r.ob : len;
+      if (end > start) out.push({ path, start, end });
+    }
+    return out;
+  }
+
+  // Font size over the selection. Sizes reflow lines, so the selection's
+  // page refs go stale — collapse to a caret at the range start instead.
+  function applyFontSize(pt) {
+    if (!(pt >= 6 && pt <= 96)) return;
+    const ranges = selectionRanges();
+    if (!ranges || !ranges.length) { report("크기: 텍스트를 선택하세요"); return; }
+    edit(() => {
+      const json = conv.set_size_ranges(JSON.stringify(ranges), pt);
+      caret = { path: ranges[0].path, off: ranges[0].start };
+      sel = null;
+      return json;
+    });
+  }
+  const fontsizeEl = document.getElementById("fontsize");
+  fontsizeEl.addEventListener("change", () => {
+    applyFontSize(+fontsizeEl.value);
+    fontsizeEl.blur();
+  });
+  fontsizeEl.addEventListener("keydown", (e) => e.stopPropagation());
+
   // Cut = copy, then the ordinary selection deletion (one history entry).
   function cutSelection() {
     if (!sel) return;
@@ -1039,7 +1080,7 @@
 
   document.addEventListener("keydown", (e) => {
     if (e.isComposing) return;
-    if (e.target === findq || e.target === replq) return; // own handlers
+    if (e.target === findq || e.target === replq || e.target.id === "fontsize") return;
     const ctrl = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
     if (ctrl && !e.altKey && key === "f") { e.preventDefault(); openFind(); return; }
@@ -1316,6 +1357,7 @@
     replaceAllWith: (q) => { replq.value = q; replaceAll(); },
     paste: doPaste,
     align: alignSelection,
+    fontSize: applyFontSize,
     findState: () => ({
       open: !findbar.hidden,
       count: findMatches.length,

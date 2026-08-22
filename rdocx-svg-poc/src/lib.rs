@@ -1930,6 +1930,41 @@ pub fn toggle_format_path(
 }
 
 /// Toggle a format over [start, end) inside one already-resolved paragraph.
+/// Set the font size (pt) over [start, end) of one paragraph, splitting
+/// runs at the range boundaries the same way toggle_in does.
+fn set_size_in(p: &mut rdocx::Paragraph<'_>, start: usize, end: usize, pt: f64) -> bool {
+    if end <= start || !(1.0..=1638.0).contains(&pt) {
+        return false;
+    }
+    let (j2, o2) = locate(p, end);
+    p.split_run(j2, o2);
+    let (j1, o1) = locate(p, start);
+    p.split_run(j1, o1);
+    let mut covered: Vec<usize> = Vec::new();
+    let mut acc = 0usize;
+    for j in 0..p.run_count() {
+        let len = p.run(j).map(|r| r.text().chars().count()).unwrap_or(0);
+        if len > 0 && acc >= start && acc + len <= end {
+            covered.push(j);
+        }
+        acc += len;
+    }
+    if covered.is_empty() {
+        return false;
+    }
+    for &j in &covered {
+        if let Some(mut r) = p.run_mut(j) {
+            r.set_size(pt);
+        }
+    }
+    true
+}
+
+/// Set the font size over [start, end) at any editable location.
+pub fn set_size_at(doc: &mut Document, at: &EditPath, start: usize, end: usize, pt: f64) -> bool {
+    with_paragraph_at(doc, at, |p| set_size_in(p, start, end, pt)).unwrap_or(false)
+}
+
 fn toggle_in(p: &mut rdocx::Paragraph<'_>, start: usize, end: usize, fmt: char) -> bool {
     if end <= start {
         return false;
