@@ -1121,6 +1121,7 @@ pub fn parse_doc_path(path: &str) -> Option<Vec<usize>> {
 
 /// An editable location parsed from a hit path: a Document-story source
 /// path, or one paragraph of a header/footer part.
+#[derive(Clone)]
 pub enum EditPath {
     Doc(Vec<usize>),
     HeaderFooter {
@@ -1663,6 +1664,29 @@ pub fn at_sibling(at: &EditPath, idx: usize) -> EditPath {
             id: *id,
             para: idx,
         },
+    }
+}
+
+/// Split the paragraph at `at` at a char offset (Enter), in any story.
+/// The tail becomes the next sibling.
+pub fn split_at(doc: &mut Document, at: &EditPath, char_off: usize) -> bool {
+    match at {
+        EditPath::Doc(children) => doc.split_paragraph_at_path(children, char_off),
+        EditPath::HeaderFooter {
+            is_header,
+            rel_id,
+            para,
+        } => doc.split_header_footer_paragraph(*is_header, rel_id, *para, char_off),
+        EditPath::Note {
+            is_footnote: true,
+            id,
+            para,
+        } => doc.split_footnote_paragraph(*id, *para, char_off),
+        EditPath::Note {
+            is_footnote: false,
+            id,
+            para,
+        } => doc.split_endnote_paragraph(*id, *para, char_off),
     }
 }
 

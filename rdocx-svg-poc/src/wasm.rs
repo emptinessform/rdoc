@@ -409,26 +409,43 @@ impl SvgConverter {
         let Some(at) = parse_edit_path(path) else {
             return Err(err("not an editable location"));
         };
+        self.mutate(move |d| crate::split_at(d, &at, offset), "split")
+    }
+
+    /// Paste plain text at (path, char offset) as one history entry.
+    /// Newlines (any convention) become paragraph splits, so a multi-line
+    /// paste produces the same structure as typing the lines with Enter.
+    pub fn paste_text(&mut self, path: &str, offset: usize, text: &str) -> Result<String, JsValue> {
+        let Some(start) = parse_edit_path(path) else {
+            return Err(err("not an editable location"));
+        };
+        let lines: Vec<String> = text
+            .replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .split('\n')
+            .map(str::to_owned)
+            .collect();
         self.mutate(
-            move |d| match &at {
-                crate::EditPath::Doc(children) => d.split_paragraph_at_path(children, offset),
-                crate::EditPath::HeaderFooter {
-                    is_header,
-                    rel_id,
-                    para,
-                } => d.split_header_footer_paragraph(*is_header, rel_id, *para, offset),
-                crate::EditPath::Note {
-                    is_footnote: true,
-                    id,
-                    para,
-                } => d.split_footnote_paragraph(*id, *para, offset),
-                crate::EditPath::Note {
-                    is_footnote: false,
-                    id,
-                    para,
-                } => d.split_endnote_paragraph(*id, *para, offset),
+            move |d| {
+                let mut at = start.clone();
+                let mut off = offset;
+                for (i, line) in lines.iter().enumerate() {
+                    if !line.is_empty() && !insert_text_at(d, &at, off, line) {
+                        return false;
+                    }
+                    off += line.chars().count();
+                    if i + 1 < lines.len() {
+                        if !crate::split_at(d, &at, off) {
+                            return false;
+                        }
+                        let (_, idx) = crate::sibling_locus(&at);
+                        at = crate::at_sibling(&at, idx + 1);
+                        off = 0;
+                    }
+                }
+                true
             },
-            "split",
+            "paste",
         )
     }
 
