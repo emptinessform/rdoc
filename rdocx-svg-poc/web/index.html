@@ -97,7 +97,8 @@
   function findHit(page, x, y) {
     let best = null, bestScore = Infinity;
     for (const h of pageHits[page - 1] || []) {
-      if (h.adv.length === 0) continue;
+      // Zero-advance hits are empty paragraphs: clickable, but real text
+      // runs win when both are near (their spans cover actual distance).
       const dy = y < h.y - h.size ? (h.y - h.size) - y : (y > h.y + 0.3 * h.size ? y - (h.y + 0.3 * h.size) : 0);
       const x1 = h.x, x2 = h.x + width(h);
       const dx = x < x1 ? x1 - x : (x > x2 ? x - x2 : 0);
