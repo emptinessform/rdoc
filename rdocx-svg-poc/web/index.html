@@ -37,6 +37,13 @@
   <label title="글자 크기 (pt)">크기
     <input type="number" id="fontsize" min="6" max="96" step="1" style="width:3.2em" placeholder="pt">
   </label>
+  <select id="parastyle" title="문단 스타일">
+    <option value="" selected disabled>스타일</option>
+    <option value="Normal">본문</option>
+    <option value="Heading1">제목 1</option>
+    <option value="Heading2">제목 2</option>
+    <option value="Heading3">제목 3</option>
+  </select>
   <span id="alignbtns">
     <button data-align="l" title="왼쪽 정렬 (Ctrl+L)">⮜</button>
     <button data-align="c" title="가운데 정렬 (Ctrl+E)">⬌</button>
@@ -671,6 +678,31 @@
     fontsizeEl.blur();
   });
   fontsizeEl.addEventListener("keydown", (e) => e.stopPropagation());
+
+  // Paragraph style for the caret paragraph / selected paragraphs.
+  function styleSelection(styleId) {
+    let paths = [];
+    const r = selRange();
+    if (r && r.kind === "scatter") paths = [...new Set(r.ranges.map((x) => x.path))];
+    else if (r && r.kind === "siblings") {
+      const idx = (pp) => +pp.match(/(\d+)$/)[1];
+      for (let i = idx(r.pa); i <= idx(r.pb); i++) paths.push(r.pa.replace(/\d+$/, i));
+    } else if (r) paths = [r.pa];
+    else if (caret) paths = [caret.path];
+    if (!paths.length) { report("스타일: 캐럿을 두세요"); return; }
+    const keep = caret && { ...caret };
+    edit(() => {
+      const json = conv.set_style_paths(JSON.stringify(paths), styleId);
+      caret = keep;
+      return json;
+    });
+  }
+  const parastyleEl = document.getElementById("parastyle");
+  parastyleEl.addEventListener("change", () => {
+    if (parastyleEl.value) styleSelection(parastyleEl.value);
+    parastyleEl.selectedIndex = 0;
+    parastyleEl.blur();
+  });
 
   // Table structure ops act on the caret's cell (top-level tables).
   function tableOp(op) {
@@ -1456,6 +1488,7 @@
     paste: doPaste,
     align: alignSelection,
     tableOp,
+    setStyle: styleSelection,
     fontSize: applyFontSize,
     fmtOn: (ranges, f) => conv.ranges_format_on(JSON.stringify(ranges), f),
     thumbs: () => ({

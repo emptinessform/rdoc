@@ -2043,6 +2043,12 @@ pub fn set_size_at(doc: &mut Document, at: &EditPath, start: usize, end: usize, 
     with_paragraph_at(doc, at, |p| set_size_in(p, start, end, pt)).unwrap_or(false)
 }
 
+/// Set the paragraph style (e.g. "Normal", "Heading1") at any editable
+/// location.
+pub fn set_style_at(doc: &mut Document, at: &EditPath, style_id: &str) -> bool {
+    with_paragraph_at(doc, at, |p| p.set_style(style_id)).is_some()
+}
+
 fn toggle_in(p: &mut rdocx::Paragraph<'_>, start: usize, end: usize, fmt: char) -> bool {
     if end <= start {
         return false;

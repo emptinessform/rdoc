@@ -412,6 +412,25 @@ impl SvgConverter {
         self.mutate(move |d| crate::split_at(d, &at, offset), "split")
     }
 
+    /// Set the paragraph style for every path in the JSON string array, as
+    /// one history entry.
+    pub fn set_style_paths(&mut self, json: &str, style_id: &str) -> Result<String, JsValue> {
+        let paths: Vec<String> =
+            serde_json::from_str(json).map_err(|e| err(&format!("bad paths: {e}")))?;
+        if paths.is_empty() {
+            return Err(err("no paragraphs"));
+        }
+        let ats: Vec<crate::EditPath> = paths
+            .iter()
+            .map(|p| parse_edit_path(p).ok_or_else(|| err("not an editable location")))
+            .collect::<Result<_, _>>()?;
+        let style = style_id.to_owned();
+        self.mutate(
+            move |d| ats.iter().all(|at| crate::set_style_at(d, at, &style)),
+            "style",
+        )
+    }
+
     /// Table structure ops keyed by the caret's cell path ("d/T.r.c.p",
     /// top-level tables only): 'r' inserts a row below, 'R' deletes the
     /// row, 'c' inserts a column to the right, 'C' deletes the column.
