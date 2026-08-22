@@ -431,6 +431,34 @@ impl SvgConverter {
         )
     }
 
+    /// Toggle bold/italic/underline over per-paragraph ranges with Word's
+    /// whole-selection semantics: if every covered run already carries the
+    /// format, clear it, otherwise set it — one history entry.
+    pub fn toggle_ranges(&mut self, json: &str, fmt: char) -> Result<String, JsValue> {
+        let ranges = Self::parse_ranges(json)?;
+        self.mutate(
+            move |d| {
+                let all_on = ranges
+                    .iter()
+                    .all(|(at, s, e)| crate::format_all_on_at(d, at, *s, *e, fmt) == Some(true));
+                ranges
+                    .iter()
+                    .all(|(at, s, e)| crate::set_format_at(d, at, *s, *e, fmt, !all_on))
+            },
+            "toggle",
+        )
+    }
+
+    /// Read-only: whether every run the ranges cover carries the format
+    /// (drives tests and, later, toolbar button states).
+    pub fn ranges_format_on(&mut self, json: &str, fmt: char) -> Result<bool, JsValue> {
+        let ranges = Self::parse_ranges(json)?;
+        let doc = self.doc.as_mut().ok_or_else(|| err("no document loaded"))?;
+        Ok(ranges
+            .iter()
+            .all(|(at, s, e)| crate::format_all_on_at(doc, at, *s, *e, fmt) == Some(true)))
+    }
+
     /// Set the font size (pt) over per-paragraph ranges (the decomposed
     /// shape of any selection), as one history entry.
     pub fn set_size_ranges(&mut self, json: &str, pt: f64) -> Result<String, JsValue> {

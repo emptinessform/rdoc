@@ -956,13 +956,13 @@
   }
 
   function toggleFmt(f) {
-    const r = selRange();
-    if (!r) { report("select some text first (Ctrl+B/I/U)"); return; }
-    if (r.kind !== "same") { report("format toggle: same-paragraph selections only for now"); return; }
+    const ranges = selectionRanges();
+    if (!ranges || !ranges.length) { report("select some text first (Ctrl+B/I/U)"); return; }
     edit(() => {
-      const json = conv.toggle(r.pa, r.oa, r.ob, f);
+      const json = conv.toggle_ranges(JSON.stringify(ranges), f);
       sel = null;
-      caret = { path: r.pa, off: r.ob };
+      const last = ranges[ranges.length - 1];
+      caret = { path: last.path, off: last.end };
       return json;
     });
   }
@@ -1358,6 +1358,8 @@
     paste: doPaste,
     align: alignSelection,
     fontSize: applyFontSize,
+    fmtOn: (ranges, f) => conv.ranges_format_on(JSON.stringify(ranges), f),
+    selRanges: selectionRanges,
     findState: () => ({
       open: !findbar.hidden,
       count: findMatches.length,

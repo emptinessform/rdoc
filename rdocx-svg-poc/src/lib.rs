@@ -1930,6 +1930,84 @@ pub fn toggle_format_path(
 }
 
 /// Toggle a format over [start, end) inside one already-resolved paragraph.
+/// Whether every run overlapping [start, end) already carries the format —
+/// the read half of Word's toggle semantics, computed without mutating.
+fn format_all_on_in(p: &rdocx::Paragraph<'_>, start: usize, end: usize, fmt: char) -> Option<bool> {
+    let mut acc = 0usize;
+    let mut any = false;
+    for j in 0..p.run_count() {
+        let r = p.run(j)?;
+        let len = r.text().chars().count();
+        if start.max(acc) < end.min(acc + len) {
+            any = true;
+            let on = match fmt {
+                'b' => r.is_bold(),
+                'i' => r.is_italic(),
+                'u' => r.is_underline(),
+                _ => return None,
+            };
+            if !on {
+                return Some(false);
+            }
+        }
+        acc += len;
+    }
+    any.then_some(true)
+}
+
+/// Read `format_all_on_in` at any editable location.
+pub fn format_all_on_at(
+    doc: &mut Document,
+    at: &EditPath,
+    start: usize,
+    end: usize,
+    fmt: char,
+) -> Option<bool> {
+    with_paragraph_at(doc, at, |p| format_all_on_in(p, start, end, fmt)).flatten()
+}
+
+/// Set (not toggle) a format over [start, end) of one paragraph, splitting
+/// runs at the range boundaries like toggle_in.
+fn set_format_in(p: &mut rdocx::Paragraph<'_>, start: usize, end: usize, fmt: char, on: bool) -> bool {
+    if end <= start {
+        return false;
+    }
+    let (j2, o2) = locate(p, end);
+    p.split_run(j2, o2);
+    let (j1, o1) = locate(p, start);
+    p.split_run(j1, o1);
+    let mut acc = 0usize;
+    let mut any = false;
+    for j in 0..p.run_count() {
+        let len = p.run(j).map(|r| r.text().chars().count()).unwrap_or(0);
+        if len > 0 && acc >= start && acc + len <= end {
+            any = true;
+            if let Some(mut r) = p.run_mut(j) {
+                match fmt {
+                    'b' => r.set_bold(on),
+                    'i' => r.set_italic(on),
+                    'u' => r.set_underline(on),
+                    _ => return false,
+                }
+            }
+        }
+        acc += len;
+    }
+    any
+}
+
+/// Set a format over [start, end) at any editable location.
+pub fn set_format_at(
+    doc: &mut Document,
+    at: &EditPath,
+    start: usize,
+    end: usize,
+    fmt: char,
+    on: bool,
+) -> bool {
+    with_paragraph_at(doc, at, |p| set_format_in(p, start, end, fmt, on)).unwrap_or(false)
+}
+
 /// Set the font size (pt) over [start, end) of one paragraph, splitting
 /// runs at the range boundaries the same way toggle_in does.
 fn set_size_in(p: &mut rdocx::Paragraph<'_>, start: usize, end: usize, pt: f64) -> bool {
