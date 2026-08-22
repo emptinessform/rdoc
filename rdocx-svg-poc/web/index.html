@@ -26,7 +26,7 @@
     <option value="2">200%</option>
   </select></label>
   <span id="status">loading wasm…</span>
-  <span id="hint">click: caret · drag: select · type/Enter/Backspace/화살표 · Ctrl+B/I/U · Ctrl+Z/Y · Ctrl+C · Ctrl+Alt+F 각주 · 한글 IME</span>
+  <span id="hint">click: caret · drag: select · type/Enter/Backspace/화살표 · Ctrl+B/I/U · Ctrl+Z/Y · Ctrl+C · Ctrl+Alt+F 각주/E 미주/D 삭제 · 한글 IME</span>
 </header>
 <div id="pages"></div>
 <input id="ime" autocomplete="off" style="position:fixed; top:0; left:-9999px; width:100px; opacity:0">
@@ -567,6 +567,33 @@
     });
   }
 
+  function insertEndnote() {
+    if (!caret || !caret.path.startsWith("d/")) { report("미주는 본문에서만 삽입"); return; }
+    edit(() => {
+      const json = conv.insert_endnote(caret.path, caret.off);
+      const id = conv.last_note_id();
+      caret = id == null ? null : { path: `en/${id}/0`, off: 0 };
+      sel = null;
+      return json;
+    });
+  }
+
+  function deleteEndnote() {
+    if (!caret || !caret.path.startsWith("en/")) { report("미주 안에 캐럿을 두고 Ctrl+Alt+D"); return; }
+    edit(() => {
+      const json = conv.delete_endnote(caret.path);
+      caret = null;
+      sel = null;
+      return json;
+    });
+  }
+
+  // Ctrl+Alt+D deletes whichever note the caret sits in.
+  function deleteNote() {
+    if (caret && caret.path.startsWith("en/")) deleteEndnote();
+    else deleteFootnote();
+  }
+
   function forwardDelete() {
     const len = chars(conv.paragraph_text_at(caret.path) || "").length;
     if (caret.off >= len) {
@@ -639,7 +666,8 @@
     if (ctrl && key === "z" && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
     if (ctrl && (key === "y" || (key === "z" && e.shiftKey))) { e.preventDefault(); doRedo(); return; }
     if (ctrl && e.altKey && key === "f") { e.preventDefault(); insertFootnote(); return; }
-    if (ctrl && e.altKey && key === "d") { e.preventDefault(); deleteFootnote(); return; }
+    if (ctrl && e.altKey && key === "e") { e.preventDefault(); insertEndnote(); return; }
+    if (ctrl && e.altKey && key === "d") { e.preventDefault(); deleteNote(); return; }
     if (ctrl && (key === "b" || key === "i" || key === "u")) { e.preventDefault(); toggleFmt(key); return; }
     if (ctrl || e.altKey) return;
     if (e.key.length === 1) {
@@ -825,6 +853,9 @@
     saveDocx: () => conv.save_docx(),
     insertFootnote,
     deleteFootnote,
+    insertEndnote,
+    deleteEndnote,
+    deleteNote,
     loadBytes: (bytes) => {
       conv.load_docx(bytes);
       const t0 = performance.now();

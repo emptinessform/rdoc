@@ -379,9 +379,47 @@ impl SvgConverter {
         Ok(out)
     }
 
-    /// The id created by the most recent successful `insert_footnote`.
+    /// The id created by the most recent successful `insert_footnote` or
+    /// `insert_endnote`.
     pub fn last_note_id(&self) -> Option<i32> {
         self.last_note_id
+    }
+
+    /// Insert a new empty endnote referenced at (Document-story path,
+    /// char offset). One history entry; the new note id is readable via
+    /// `last_note_id` until the next insertion.
+    pub fn insert_endnote(&mut self, path: &str, offset: usize) -> Result<String, JsValue> {
+        let Some(children) = parse_doc_path(path) else {
+            return Err(err("endnotes can only be referenced from the document body"));
+        };
+        let created = std::rc::Rc::new(std::cell::Cell::new(None));
+        let seen = created.clone();
+        let out = self.mutate(
+            move |d| match d.insert_endnote_ref_at(&children, offset) {
+                Some(id) => {
+                    seen.set(Some(id));
+                    true
+                }
+                None => false,
+            },
+            "insert endnote",
+        )?;
+        self.last_note_id = created.get();
+        Ok(out)
+    }
+
+    /// Delete the endnote a hit path points into, along with every
+    /// reference marker in the body. One history entry.
+    pub fn delete_endnote(&mut self, path: &str) -> Result<String, JsValue> {
+        let Some(crate::EditPath::Note {
+            is_footnote: false,
+            id,
+            ..
+        }) = parse_edit_path(path)
+        else {
+            return Err(err("not an endnote location"));
+        };
+        self.mutate(move |d| d.remove_endnote(id), "delete endnote")
     }
 
     /// Delete the footnote a hit path points into, along with every
