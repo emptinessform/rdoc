@@ -17,15 +17,15 @@ fn main() {
     let layout = doc.layout().expect("layout");
     println!(
         "layout: {} page(s), {} font(s), {} diagnostic(s)",
-        layout.pages.len(),
-        layout.fonts.len(),
-        layout.diagnostics.len()
+        layout.layout.pages.len(),
+        layout.layout.fonts.len(),
+        layout.layout.diagnostics.len()
     );
-    for d in &layout.diagnostics {
+    for d in &layout.layout.diagnostics {
         println!("  diagnostic: {}", d.message);
     }
 
-    let (svgs, hits) = render_with_hits(&doc, &layout);
+    let (svgs, hits) = render_with_hits(&doc, &layout.layout);
     for (i, svg) in svgs.iter().enumerate() {
         let path = out_dir.join(format!("page-{}.svg", i + 1));
         fs::write(&path, svg).expect("write svg");
@@ -62,7 +62,7 @@ fn main() {
         fs::write(out_dir.join(format!("page-{}.ref.png", i + 1)), png).expect("write png");
     }
 
-    write_index(out_dir, layout.pages.len());
+    write_index(out_dir, layout.layout.pages.len());
     println!("wrote {}", out_dir.join("index.html").display());
 }
 

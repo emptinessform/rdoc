@@ -88,8 +88,8 @@ impl SvgConverter {
             .iter()
             .map(|(family, data)| (family.as_str(), data.as_slice()))
             .collect();
-        let layout = doc.layout_with_fonts(&fonts).map_err(err)?;
-        let delta = render_delta(doc, &layout, &mut self.cache);
+        let layout = doc.layout_with_fonts_and_bundled_fallback(&fonts).map_err(err)?;
+        let delta = render_delta(doc, &layout.layout, &mut self.cache);
         serde_json::to_string(&RenderOut {
             total: delta.total_pages,
             pages: delta.pages,
@@ -243,8 +243,9 @@ impl SvgConverter {
         self.render()
     }
 
-    /// Swap in a restored document, carrying the layout engine (and its
-    /// content-keyed caches) over so undo/redo do not go cache-cold.
+    /// Swap in a restored document, carrying the fallback layout engine
+    /// (and its content-keyed relayout caches) over so undo/redo do not go
+    /// cache-cold. Interim fork API until F-X039's session design lands.
     fn replace_doc(&mut self, new_doc: rdocx::Document) {
         if let Some(old) = self.doc.as_ref()
             && let Some(engine) = old.take_layout_engine()
