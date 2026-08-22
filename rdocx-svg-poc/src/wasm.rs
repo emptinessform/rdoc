@@ -541,6 +541,21 @@ impl SvgConverter {
         )
     }
 
+    /// Set the text color (6-digit hex, no '#') over per-paragraph ranges,
+    /// as one history entry.
+    pub fn set_color_ranges(&mut self, json: &str, hex: &str) -> Result<String, JsValue> {
+        let ranges = Self::parse_ranges(json)?;
+        let hex = hex.to_owned();
+        self.mutate(
+            move |d| {
+                ranges
+                    .iter()
+                    .all(|(at, s, e)| crate::set_color_at(d, at, *s, *e, &hex))
+            },
+            "text color",
+        )
+    }
+
     /// Paste plain text at (path, char offset) as one history entry.
     /// Newlines (any convention) become paragraph splits, so a multi-line
     /// paste produces the same structure as typing the lines with Enter.

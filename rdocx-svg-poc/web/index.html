@@ -48,6 +48,7 @@
     <option value="Heading2">제목 2</option>
     <option value="Heading3">제목 3</option>
   </select>
+  <input type="color" id="fontcolor" value="#c00000" title="글자 색 (선택 범위)" style="width:2.2em; height:1.7em; padding:1px">
   <span id="alignbtns">
     <button data-align="l" title="왼쪽 정렬 (Ctrl+L)">⮜</button>
     <button data-align="c" title="가운데 정렬 (Ctrl+E)">⬌</button>
@@ -737,6 +738,20 @@
       return json;
     });
   }
+  // Text color over the selection. Color does not reflow, so the
+  // selection refs stay valid and are restored after the edit.
+  function applyFontColor(hex) {
+    const ranges = selectionRanges();
+    if (!ranges || !ranges.length) { report("색: 텍스트를 선택하세요"); return; }
+    const keepSel = sel && { a: { ...sel.a }, b: { ...sel.b } };
+    edit(() => conv.set_color_ranges(JSON.stringify(ranges), hex));
+    if (keepSel) { sel = keepSel; drawSelection(); report(); }
+  }
+  const fontcolorEl = document.getElementById("fontcolor");
+  fontcolorEl.addEventListener("change", () => {
+    applyFontColor(fontcolorEl.value.replace("#", "").toUpperCase());
+  });
+
   const fontsizeEl = document.getElementById("fontsize");
   fontsizeEl.addEventListener("change", () => {
     applyFontSize(+fontsizeEl.value);
@@ -1623,6 +1638,7 @@
     imageSel: () => (imageSel ? imageSel.index : null),
     deleteImage: deleteSelectedImage,
     fontSize: applyFontSize,
+    fontColor: applyFontColor,
     fmtOn: (ranges, f) => conv.ranges_format_on(JSON.stringify(ranges), f),
     thumbs: () => ({
       open: !thumbsEl.hidden,
