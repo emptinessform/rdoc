@@ -70,7 +70,7 @@
     <button id="findclose" title="닫기 (Esc)">✕</button>
   </span>
   <span id="status">loading wasm…</span>
-  <span id="hint">click: caret · drag: select · type/Enter/Backspace/화살표 · Ctrl+B/I/U · Ctrl+L/E/R 정렬 · Ctrl+Z/Y · Ctrl+C/X/V · Ctrl+F 찾기/H 바꾸기 · Ctrl+Alt+F 각주/E 미주/D 삭제 · 한글 IME</span>
+  <span id="hint">click: caret · drag: select · type/Enter/Backspace/화살표/표 Tab · Ctrl+B/I/U · Ctrl+L/E/R 정렬 · Ctrl+Z/Y · Ctrl+C/X/V · Ctrl+F 찾기/H 바꾸기 · Ctrl+Alt+F 각주/E 미주/D 삭제 · 한글 IME</span>
 </header>
 <div id="thumbs" hidden></div>
 <div id="pages"></div>
@@ -787,6 +787,48 @@
     b.onclick = () => tableOp(b.dataset.op);
   });
 
+  // Word-style Tab in a table: move to the next/previous cell selecting its
+  // content; Tab at the last cell appends a row (via the structure op).
+  function landInCell(t, r, c) {
+    const path = `d/${t}.${r}.${c}.0`;
+    const text = conv.paragraph_text_at(path);
+    if (text == null) return false;
+    const len = chars(text).length;
+    if (len > 0 && selectParaOffsets(path, 0, len)) { report(); return true; }
+    caret = { path, off: 0 };
+    sel = null;
+    drawSelection();
+    drawCaret();
+    report();
+    return true;
+  }
+
+  function lastColOf(t, r) {
+    let c = 0;
+    while (conv.paragraph_text_at(`d/${t}.${r}.${c + 1}.0`) != null) c++;
+    return c;
+  }
+
+  function tabCell(path, dir) {
+    const m = path && path.match(/^d\/(\d+)\.(\d+)\.(\d+)\.\d+$/);
+    if (!m) return false;
+    const [t, r, c] = [+m[1], +m[2], +m[3]];
+    if (dir > 0) {
+      if (landInCell(t, r, c + 1) || landInCell(t, r + 1, 0)) return true;
+      // Last cell: append a row, then land in it.
+      const keep = caret ? { ...caret } : { path, off: 0 };
+      edit(() => {
+        const json = conv.table_op(path, "r");
+        caret = keep;
+        return json;
+      });
+      return landInCell(t, r + 1, 0);
+    }
+    if (c > 0) return landInCell(t, r, c - 1);
+    if (r > 0) return landInCell(t, r - 1, lastColOf(t, r - 1));
+    return true; // first cell: stay (Word keeps the caret there)
+  }
+
   // Cut = copy, then the ordinary selection deletion (one history entry).
   function cutSelection() {
     if (!sel) return;
@@ -1316,6 +1358,14 @@
       return;
     }
     if (ctrl || e.altKey) return;
+    if (e.key === "Tab") {
+      const pos = caret ? caret.path : (sel && (getRun(sel.a) || {}).path) || null;
+      if (pos && /^d\/\d+\.\d+\.\d+\.\d+$/.test(pos)) {
+        e.preventDefault();
+        tabCell(pos, e.shiftKey ? -1 : 1);
+        return;
+      }
+    }
     if (e.key.length === 1) {
       e.preventDefault();
       if (selRange()) replaceSelWith(e.key);
@@ -1566,6 +1616,7 @@
     paste: doPaste,
     align: alignSelection,
     tableOp,
+    tabCell: (dir) => tabCell(caret ? caret.path : (sel && (getRun(sel.a) || {}).path), dir),
     setStyle: styleSelection,
     insertImage: insertImageBytes,
     selectImageAt: (k) => selectImage(document.querySelectorAll("#pages svg image")[k]),
