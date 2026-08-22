@@ -9,7 +9,7 @@
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    HitRun, RenderCache, body_order_of, delete_char_at, delete_range, delete_range_at,
+    HitRun, RenderCache, body_order_of, delete_char_at, delete_range_across, delete_range_at,
     insert_text_at, parse_doc_path, parse_edit_path, render_delta, text_at, toggle_at,
 };
 
@@ -125,9 +125,15 @@ impl SvgConverter {
         }
         let doc = self.doc.as_mut().unwrap();
         if !op(doc) {
-            // Roll the failed checkpoint back so undo stays truthful.
-            if checkpointed {
-                self.undo.pop();
+            // A multi-step op can fail midway; restore the checkpoint so a
+            // refusal never leaves a partial mutation behind, then drop it
+            // so undo stays truthful. (Mid-composition ops are single-step
+            // and cannot partially fail, so there is nothing to restore.)
+            if checkpointed
+                && let Some(prev) = self.undo.pop()
+                && let Ok(restored) = rdocx::Document::from_bytes(&prev)
+            {
+                self.replace_doc(restored);
             }
             return Err(err(format!("{what} failed at that position")));
         }
@@ -179,8 +185,10 @@ impl SvgConverter {
         self.mutate(move |d| delete_char_at(d, &at, offset), "delete")
     }
 
-    /// Delete an arbitrary range. Within one paragraph (body or table cell)
-    /// any range works; across paragraphs both ends must be body paragraphs.
+    /// Delete an arbitrary range. Within one paragraph (any story) any range
+    /// works; across paragraphs both ends must be sibling paragraphs of one
+    /// container (body run, one table cell, one header/footer, one note).
+    /// Scattered selections (across cells) go through `delete_ranges`.
     pub fn delete_selection(
         &mut self,
         pa: &str,
@@ -197,29 +205,18 @@ impl SvgConverter {
                 "delete range",
             );
         }
-        let (Some(ca), Some(cb)) = (parse_doc_path(pa), parse_doc_path(pb)) else {
-            return Err(err("not an editable location"));
+        let Some((a, oa, b, ob)) = Self::sibling_ends(pa, oa, pb, ob) else {
+            return Err(err("selection ends are not sibling paragraphs"));
         };
-        if ca.len() != 1 || cb.len() != 1 {
-            return Err(err(
-                "selection edits across table cells are not supported yet",
-            ));
-        }
         self.mutate(
-            move |d| {
-                let (Some(a), Some(b)) = (body_order_of(d, ca[0]), body_order_of(d, cb[0]))
-                else {
-                    return false;
-                };
-                delete_range(d, a, oa, b, ob)
-            },
+            move |d| delete_range_across(d, &a, oa, &b, ob),
             "delete range",
         )
     }
 
     /// Replace a selection with text as one history entry (typing over a
-    /// selection). Within one paragraph any range works; across paragraphs
-    /// both ends must be body paragraphs.
+    /// selection). Same reach as `delete_selection`; the text lands where
+    /// the selection started.
     pub fn replace_selection(
         &mut self,
         pa: &str,
@@ -242,25 +239,84 @@ impl SvgConverter {
                 "replace selection",
             );
         }
-        let (Some(ca), Some(cb)) = (parse_doc_path(pa), parse_doc_path(pb)) else {
-            return Err(err("not an editable location"));
+        let Some((a, oa, b, ob)) = Self::sibling_ends(pa, oa, pb, ob) else {
+            return Err(err("selection ends are not sibling paragraphs"));
         };
-        if ca.len() != 1 || cb.len() != 1 {
-            return Err(err(
-                "selection edits across table cells are not supported yet",
-            ));
-        }
         self.mutate(
             move |d| {
-                let (Some(a), Some(b)) = (body_order_of(d, ca[0]), body_order_of(d, cb[0]))
-                else {
-                    return false;
-                };
-                delete_range(d, a, oa, b, ob)
-                    && (text.is_empty() || insert_text_at(d, &crate::EditPath::Doc(ca.clone()), oa, &text))
+                delete_range_across(d, &a, oa, &b, ob)
+                    && (text.is_empty() || insert_text_at(d, &a, oa, &text))
             },
             "replace selection",
         )
+    }
+
+    /// Parse two selection ends into sibling paragraphs of one container,
+    /// ordered by their sibling index.
+    fn sibling_ends(
+        pa: &str,
+        oa: usize,
+        pb: &str,
+        ob: usize,
+    ) -> Option<(crate::EditPath, usize, crate::EditPath, usize)> {
+        let (a, b) = (parse_edit_path(pa)?, parse_edit_path(pb)?);
+        let (ka, ia) = crate::sibling_locus(&a);
+        let (kb, ib) = crate::sibling_locus(&b);
+        if ka != kb {
+            return None;
+        }
+        Some(if ib < ia { (b, ob, a, oa) } else { (a, oa, b, ob) })
+    }
+
+    /// Delete several per-paragraph ranges as one history entry — the
+    /// scattered shape of a selection spanning table cells. Word semantics
+    /// approximated: text goes, cell/paragraph structure stays. Input is a
+    /// JSON array of `{path, start, end}`.
+    pub fn delete_ranges(&mut self, json: &str) -> Result<String, JsValue> {
+        let ranges = Self::parse_ranges(json)?;
+        self.mutate(
+            move |d| ranges.iter().all(|(at, s, e)| delete_range_at(d, at, *s, *e)),
+            "delete ranges",
+        )
+    }
+
+    /// `delete_ranges` plus one insertion at the first range's start (typing
+    /// over a scattered selection). One history entry.
+    pub fn replace_ranges(&mut self, json: &str, text: &str) -> Result<String, JsValue> {
+        let ranges = Self::parse_ranges(json)?;
+        let text = text.to_owned();
+        self.mutate(
+            move |d| {
+                ranges.iter().all(|(at, s, e)| delete_range_at(d, at, *s, *e))
+                    && (text.is_empty() || {
+                        let (at, s, _) = &ranges[0];
+                        insert_text_at(d, at, *s, &text)
+                    })
+            },
+            "replace ranges",
+        )
+    }
+
+    fn parse_ranges(json: &str) -> Result<Vec<(crate::EditPath, usize, usize)>, JsValue> {
+        #[derive(serde::Deserialize)]
+        struct RangeSpec {
+            path: String,
+            start: usize,
+            end: usize,
+        }
+        let specs: Vec<RangeSpec> =
+            serde_json::from_str(json).map_err(|e| err(&format!("bad ranges: {e}")))?;
+        if specs.is_empty() {
+            return Err(err("no ranges"));
+        }
+        specs
+            .into_iter()
+            .map(|r| {
+                parse_edit_path(&r.path)
+                    .map(|at| (at, r.start, r.end))
+                    .ok_or_else(|| err("not an editable location"))
+            })
+            .collect()
     }
 
     /// Replace [start, end) in one paragraph with text (IME composition).

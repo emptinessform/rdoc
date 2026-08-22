@@ -1551,6 +1551,126 @@ pub fn delete_range(
     merge_paragraph_into_prev(doc, pa + 1)
 }
 
+/// Container identity + sibling index of an editable path. Two paths that
+/// share the container key are sibling paragraphs whose document order is
+/// the index (body content index, cell content index, or note/part
+/// paragraph index).
+pub fn sibling_locus(at: &EditPath) -> (String, usize) {
+    match at {
+        EditPath::Doc(children) => {
+            let (last, prefix) = children.split_last().expect("doc paths are non-empty");
+            (format!("d:{prefix:?}"), *last)
+        }
+        EditPath::HeaderFooter {
+            is_header,
+            rel_id,
+            para,
+        } => (
+            format!("{}:{rel_id}", if *is_header { "h" } else { "f" }),
+            *para,
+        ),
+        EditPath::Note {
+            is_footnote,
+            id,
+            para,
+        } => (
+            format!("{}:{id}", if *is_footnote { "fn" } else { "en" }),
+            *para,
+        ),
+    }
+}
+
+/// The sibling of `at` with the given index in the same container.
+pub fn at_sibling(at: &EditPath, idx: usize) -> EditPath {
+    match at {
+        EditPath::Doc(children) => {
+            let mut c = children.clone();
+            *c.last_mut().expect("doc paths are non-empty") = idx;
+            EditPath::Doc(c)
+        }
+        EditPath::HeaderFooter {
+            is_header, rel_id, ..
+        } => EditPath::HeaderFooter {
+            is_header: *is_header,
+            rel_id: rel_id.clone(),
+            para: idx,
+        },
+        EditPath::Note {
+            is_footnote, id, ..
+        } => EditPath::Note {
+            is_footnote: *is_footnote,
+            id: *id,
+            para: idx,
+        },
+    }
+}
+
+/// Merge the paragraph at `at` into its previous sibling, in any story.
+pub fn merge_at(doc: &mut Document, at: &EditPath) -> bool {
+    match at {
+        EditPath::Doc(children) => doc.merge_paragraph_at_path(children),
+        EditPath::HeaderFooter {
+            is_header,
+            rel_id,
+            para,
+        } => doc.merge_header_footer_paragraph(*is_header, rel_id, *para),
+        EditPath::Note {
+            is_footnote: true,
+            id,
+            para,
+        } => doc.merge_footnote_paragraph(*id, *para),
+        EditPath::Note {
+            is_footnote: false,
+            id,
+            para,
+        } => doc.merge_endnote_paragraph(*id, *para),
+    }
+}
+
+/// Word-style deletion across sibling paragraphs of one container (body,
+/// table cell, header/footer, footnote, endnote): trim the head paragraph's
+/// tail and the tail paragraph's head, clear fully covered middles, then
+/// merge everything into the head paragraph. Fails atomically (staged doc
+/// is discarded) when the container keys differ or any sibling in between
+/// is not a plain paragraph — e.g. a body selection spanning a table.
+pub fn delete_range_across(
+    doc: &mut Document,
+    at_a: &EditPath,
+    oa: usize,
+    at_b: &EditPath,
+    ob: usize,
+) -> bool {
+    let (ka, ia) = sibling_locus(at_a);
+    let (kb, ib) = sibling_locus(at_b);
+    if ka != kb || ib <= ia {
+        return false;
+    }
+    let Some(len_a) = text_at(doc, at_a).map(|t| t.chars().count()) else {
+        return false;
+    };
+    if !delete_range_at(doc, at_a, oa.min(len_a), len_a) {
+        return false;
+    }
+    for i in ia + 1..ib {
+        let mid = at_sibling(at_a, i);
+        let Some(len) = text_at(doc, &mid).map(|t| t.chars().count()) else {
+            return false;
+        };
+        if !delete_range_at(doc, &mid, 0, len) {
+            return false;
+        }
+    }
+    if !delete_range_at(doc, at_b, 0, ob) {
+        return false;
+    }
+    for _ in ia..ib {
+        if !merge_at(doc, &at_sibling(at_a, ia + 1)) {
+            return false;
+        }
+    }
+    true
+}
+
 /// Locate the run index and run-local offset for a paragraph-level offset.
 fn locate(p: &rdocx::Paragraph<'_>, off: usize) -> (usize, usize) {
     let mut acc = 0usize;

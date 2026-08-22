@@ -433,6 +433,13 @@
 
   /// Selection endpoints as an ordered document range, or null when either
   /// endpoint has no provenance mapping.
+  // Sibling paragraphs = same path with only the final numeric segment
+  // differing (same body run, same cell, same header/footer, same note).
+  function sameContainer(pa, pb) {
+    const a = pa.match(/^(.*?)(\d+)$/), b = pb.match(/^(.*?)(\d+)$/);
+    return !!(a && b && a[1] === b[1]);
+  }
+
   function selRange() {
     if (!sel) return null;
     const A = getRun(sel.a), B = getRun(sel.b);
@@ -441,14 +448,32 @@
     let pa = A.path, oa = A.start + sel.a.k, pb = B.path, ob = B.start + sel.b.k;
     if (pa === pb) {
       if (ob < oa) [oa, ob] = [ob, oa];
-      return { pa, oa, pb, ob };
+      return { kind: "same", pa, oa, pb, ob };
     }
-    // Cross-paragraph ranges are body-only; order by body index.
-    const bodyIdx = (p) => (p.startsWith("d/") && !p.includes(".") ? +p.slice(2) : null);
-    const ia = bodyIdx(pa), ib = bodyIdx(pb);
-    if (ia === null || ib === null) return null;
-    if (ib < ia) [pa, oa, pb, ob] = [pb, ob, pa, oa];
-    return { pa, oa, pb, ob };
+    if (sameContainer(pa, pb)) {
+      const idx = (p) => +p.match(/(\d+)$/)[1];
+      if (idx(pb) < idx(pa)) [pa, oa, pb, ob] = [pb, ob, pa, oa];
+      return { kind: "siblings", pa, oa, pb, ob };
+    }
+    // Scattered (e.g. across table cells): decompose the selection into one
+    // covered range per touched Document-story paragraph, in document order.
+    // Text is removed, cell/paragraph structure stays (Word-like clearing).
+    const ranges = [];
+    const byPath = new Map();
+    for (const h of allHits()) {
+      if (h.path === null || h.start === null || !h.path.startsWith("d/")) continue;
+      const cs = chars(h.text);
+      const ref = { page: h.page, idx: h.id };
+      if (cmpPos({ ...ref, k: cs.length }, sel.a) < 0 || cmpPos({ ...ref, k: 0 }, sel.b) > 0) continue;
+      const k1 = h.page === sel.a.page && h.id === sel.a.idx ? sel.a.k : 0;
+      const k2 = h.page === sel.b.page && h.id === sel.b.idx ? sel.b.k : cs.length;
+      if (k2 <= k1) continue;
+      let r = byPath.get(h.path);
+      if (!r) { r = { path: h.path, start: h.start + k1, end: h.start + k2 }; byPath.set(h.path, r); ranges.push(r); }
+      else { r.start = Math.min(r.start, h.start + k1); r.end = Math.max(r.end, h.start + k2); }
+    }
+    if (!ranges.length) return null;
+    return { kind: "scatter", ranges };
   }
 
   function edit(fn) {
@@ -483,8 +508,12 @@
     const r = selRange();
     if (!r) return;
     edit(() => {
-      const json = conv.delete_selection(r.pa, r.oa, r.pb, r.ob);
-      caret = { path: r.pa, off: r.oa };
+      const json = r.kind === "scatter"
+        ? conv.delete_ranges(JSON.stringify(r.ranges))
+        : conv.delete_selection(r.pa, r.oa, r.pb, r.ob);
+      caret = r.kind === "scatter"
+        ? { path: r.ranges[0].path, off: r.ranges[0].start }
+        : { path: r.pa, off: r.oa };
       sel = null;
       return json;
     });
@@ -495,8 +524,13 @@
     if (!r) return;
     edit(() => {
       // One wasm call = one undo entry for the whole replacement.
-      const json = conv.replace_selection(r.pa, r.oa, r.pb, r.ob, s);
-      caret = { path: r.pa, off: r.oa + chars(s).length };
+      const json = r.kind === "scatter"
+        ? conv.replace_ranges(JSON.stringify(r.ranges), s)
+        : conv.replace_selection(r.pa, r.oa, r.pb, r.ob, s);
+      const at = r.kind === "scatter"
+        ? { path: r.ranges[0].path, off: r.ranges[0].start }
+        : { path: r.pa, off: r.oa };
+      caret = { path: at.path, off: at.off + chars(s).length };
       sel = null;
       return json;
     });
@@ -537,7 +571,7 @@
   function toggleFmt(f) {
     const r = selRange();
     if (!r) { report("select some text first (Ctrl+B/I/U)"); return; }
-    if (r.pa !== r.pb) { report("format toggle: same-paragraph selections only for now"); return; }
+    if (r.kind !== "same") { report("format toggle: same-paragraph selections only for now"); return; }
     edit(() => {
       const json = conv.toggle(r.pa, r.oa, r.ob, f);
       sel = null;
