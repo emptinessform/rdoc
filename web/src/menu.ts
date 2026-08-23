@@ -64,6 +64,9 @@ async function loadSample(url: string, after?: () => void) {
 
 const COMMANDS: Record<string, () => void> = {
   openFile: () => (document.getElementById("file") as HTMLInputElement).click(),
+  sampleReport: () => void loadSample("./report-sample.docx", () => {
+    report("사업 리포트 샘플 — 제목 스타일·리스트·표·링크·서식 종합");
+  }),
   sampleTrack: () => void loadSample("./trackview-test.docx", () => {
     if (!S.trackedView) toggleTrackedView(true);
     report("변경 추적 샘플 — 보기 메뉴에서 표시를 끄면 최종본");
