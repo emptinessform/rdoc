@@ -59,6 +59,49 @@ window.__benchResult = "pending";
   await wait(200);
   check("toggle off clears highlights", document.querySelectorAll(".commenthl").length === 0);
 
+  // 7. Authoring: add a comment over "world" (13..18), then resolve and
+  // remove it.
+  const wOff = 13;
+  const hw = t.hits(1).find(h => h.path === "d/0" && h.start !== null
+    && wOff >= h.start && wOff < h.start + h.adv.length);
+  let xw = hw.x; for (let k = 0; k < wOff - hw.start; k++) xw += hw.adv[k];
+  const hw2 = t.hits(1).find(h => h.path === "d/0" && h.start !== null
+    && 17 >= h.start && 17 < h.start + h.adv.length);
+  let xw2 = hw2.x; for (let k = 0; k < 17 - hw2.start; k++) xw2 += hw2.adv[k];
+  t.select(1, xw + 0.1, hw.y - 2, xw2 + hw2.adv[17 - hw2.start] - 0.1, hw2.y - 2);
+  t.addComment("second note");
+  await wait(400);
+  const list2 = t.commentList();
+  const spans3 = t.commentSpans();
+  res.info.afterAdd = { list2, spans3 };
+  check("comment added", list2.length === 2 && list2.some(c => c.text.includes("second note")));
+  check("new span covers world", spans3.some(sp => sp.start === 13 && sp.end === 18));
+
+  // Save round-trip keeps the authored comment.
+  const bytes = t.saveDocx();
+  await t.loadBytes(bytes);
+  await wait(600);
+  check("round-trip keeps authored comment",
+    t.commentList().length === 2 && t.commentSpans().some(sp => sp.start === 13 && sp.end === 18));
+
+  // Resolve toggle, then removal.
+  const hw3 = t.hits(1).find(h => h.path === "d/0" && h.start !== null
+    && 14 >= h.start && 14 < h.start + h.adv.length);
+  let xw3 = hw3.x; for (let k = 0; k < 14 - hw3.start; k++) xw3 += hw3.adv[k];
+  t.clickAt(1, xw3 + 0.5, hw3.y - 2);
+  t.resolveComment();
+  await wait(300);
+  const newId = t.commentSpans().find(sp => sp.start === 13).id;
+  check("resolved flag set", t.commentList().find(c => c.id === newId).resolved === true);
+  t.clickAt(1, xw3 + 0.5, hw3.y - 2);
+  t.removeComment();
+  await wait(300);
+  check("comment removed", t.commentList().length === 1
+    && !t.commentSpans().some(sp => sp.start === 13));
+  t.undo();
+  await wait(300);
+  check("undo restores comment", t.commentList().length === 2);
+
   window.__benchResult = JSON.stringify(res);
 })().catch(e => { window.__benchResult = "ERR: " + e; });
 "started"

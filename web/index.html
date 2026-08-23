@@ -39,10 +39,10 @@
   #toolbar input[type=color] { width: 26px; height: 24px; padding: 1px;
     border: 1px solid #4a4f57; border-radius: 6px; background: #3a3e45; }
   #toolbar label { font-size: 12px; color: #bbb; display: flex; align-items: center; gap: 5px; }
-  #findbar, #linkbar { display: flex; align-items: center; gap: 4px; }
-  #findbar[hidden], #linkbar[hidden] { display: none; }
-  #findbar input, #linkbar input { background: #23262b; color: #eee; border: 1px solid #4a4f57;
-    border-radius: 6px; font: inherit; font-size: 13px; padding: 3px 8px; }
+  #findbar, #linkbar, #commentbar { display: flex; align-items: center; gap: 4px; }
+  #findbar[hidden], #linkbar[hidden], #commentbar[hidden] { display: none; }
+  #findbar input, #linkbar input, #commentbar input { background: #23262b; color: #eee;
+    border: 1px solid #4a4f57; border-radius: 6px; font: inherit; font-size: 13px; padding: 3px 8px; }
   #findcount { font-size: 12px; color: #9aa0a8; }
 
   #pages { display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 24px; }
@@ -103,6 +103,10 @@
         <button data-cmd="insertImage">이미지…</button>
         <button data-cmd="link">하이퍼링크…<kbd>Ctrl+K</kbd></button>
         <button data-cmd="unlink">링크 제거</button>
+        <hr>
+        <button data-cmd="commentAdd">주석…</button>
+        <button data-cmd="commentRemove">주석 삭제</button>
+        <button data-cmd="commentResolve">주석 해결 전환</button>
         <hr>
         <button data-cmd="footnote">각주<kbd>Ctrl+Alt+F</kbd></button>
         <button data-cmd="endnote">미주<kbd>Ctrl+Alt+E</kbd></button>
@@ -217,6 +221,12 @@
       <button id="linkapply" title="링크 적용 (Enter)">링크</button>
       <button id="linkremove" title="링크 제거">해제</button>
       <button id="linkclose" title="닫기 (Esc)">✕</button>
+    </span>
+    <span id="commentbar" hidden>
+      <span class="sep"></span>
+      <input id="commentq" placeholder="주석 내용" autocomplete="off" size="24">
+      <button id="commentapply" title="주석 추가 (Enter)">추가</button>
+      <button id="commentclose" title="닫기 (Esc)">✕</button>
     </span>
     <span id="findbar" hidden>
       <span class="sep"></span>

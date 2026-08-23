@@ -595,6 +595,72 @@ impl SvgConverter {
         ))
     }
 
+    /// Add a comment over [start, end) of a TOP-LEVEL body paragraph
+    /// ("d/N" — upstream anchors comments to body paragraphs), as one
+    /// history entry. Returns the render delta.
+    pub fn add_comment(
+        &mut self,
+        path: &str,
+        start: usize,
+        end: usize,
+        author: &str,
+        text: &str,
+    ) -> Result<String, JsValue> {
+        let Some(at) = parse_edit_path(path) else {
+            return Err(err("not an editable location"));
+        };
+        let crate::EditPath::Doc(ref ch) = at else {
+            return Err(err("comments anchor to body paragraphs"));
+        };
+        if ch.len() != 1 {
+            return Err(err("comments anchor to top-level body paragraphs"));
+        }
+        let body_index = ch[0];
+        let author = author.to_owned();
+        let text = text.to_owned();
+        self.mutate(
+            move |d| {
+                let Some((rs, re)) = crate::run_range_at(d, &at, start, end) else {
+                    return false;
+                };
+                d.add_comment(
+                    rdocx::RunRange {
+                        start: rdocx::RunPosition {
+                            body_index,
+                            run_index: rs,
+                        },
+                        end: rdocx::RunPosition {
+                            body_index,
+                            run_index: re,
+                        },
+                    },
+                    &author,
+                    None,
+                    &text,
+                )
+                .is_ok()
+            },
+            "add comment",
+        )
+    }
+
+    /// Remove a comment (its text and every anchor marker) by id, as one
+    /// history entry.
+    pub fn remove_comment(&mut self, id: i32) -> Result<String, JsValue> {
+        self.mutate(
+            move |d| d.remove_comment(id).unwrap_or(false),
+            "remove comment",
+        )
+    }
+
+    /// Mark a comment thread resolved / unresolved, as one history entry.
+    pub fn resolve_comment(&mut self, id: i32, resolved: bool) -> Result<String, JsValue> {
+        self.mutate(
+            move |d| d.resolve_comment(id, resolved).unwrap_or(false),
+            "resolve comment",
+        )
+    }
+
     /// The document's comments as JSON
     /// `[{"id","author","text","resolved"}]`. Read-only.
     pub fn comment_list(&mut self) -> Result<String, JsValue> {

@@ -28,7 +28,10 @@ import {
 import { imeEl, wireIme } from "./ime.js";
 import { clickAt, wireInput } from "./input.js";
 import { wireMenu, toggleTrackedView } from "./menu.js";
-import { toggleComments } from "./comments.js";
+import {
+  toggleComments, openCommentBar, applyComment, removeCommentAtCaret,
+  resolveCommentAtCaret, wireCommentBar,
+} from "./comments.js";
 import { applyLink, removeLink, openLinkBar, wireLink } from "./link.js";
 
 declare global {
@@ -114,6 +117,7 @@ wireIme();
 wireInput();
 wireMenu();
 wireLink();
+wireCommentBar();
 
 // ---- load ------------------------------------------------------------------
 
@@ -254,6 +258,9 @@ window.__t = {
   rejectAll: () => { const j = S.conv.reject_all_revisions(); apply(j, 0); },
   commentList: () => JSON.parse(S.conv.comment_list()),
   commentSpans: () => JSON.parse(S.conv.comment_spans()),
+  addComment: (text: string) => { openCommentBar(); applyComment(text); },
+  removeComment: removeCommentAtCaret,
+  resolveComment: resolveCommentAtCaret,
   setPaper: (w: number, h: number) => { const j = S.conv.set_paper(w, h); apply(j, 0); },
   setOrientation: (l: boolean) => { const j = S.conv.set_orientation(l); apply(j, 0); },
   setMargins: (t: number, r: number, b: number, l: number) => { const j = S.conv.set_margins_pt(t, r, b, l); apply(j, 0); },

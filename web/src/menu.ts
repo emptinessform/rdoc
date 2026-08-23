@@ -7,7 +7,9 @@ import { apply, report } from "./render.js";
 import { S } from "./state.js";
 import { edit } from "./edit.js";
 import { finalizeComposition } from "./ime.js";
-import { toggleComments } from "./comments.js";
+import {
+  toggleComments, openCommentBar, removeCommentAtCaret, resolveCommentAtCaret,
+} from "./comments.js";
 
 // View switch, not an edit: no history entry; the wasm side re-renders
 // the newly selected projection.
@@ -70,6 +72,9 @@ const COMMANDS: Record<string, () => void> = {
     edit(() => S.conv.reject_all_revisions());
   },
   comments: () => toggleComments(),
+  commentAdd: openCommentBar,
+  commentRemove: removeCommentAtCaret,
+  commentResolve: resolveCommentAtCaret,
   insertImage: () => (document.getElementById("imgfile") as HTMLInputElement).click(),
   undo: doUndo,
   redo: doRedo,

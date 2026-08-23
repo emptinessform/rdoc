@@ -2320,6 +2320,43 @@ pub fn set_line_spacing_at(doc: &mut Document, at: &EditPath, multiple: f64) -> 
     .unwrap_or(false)
 }
 
+/// Split a body paragraph's runs at [start, end) and return the run
+/// insertion indices for those char boundaries — the shape upstream
+/// comment anchoring (RunRange) wants.
+pub fn run_range_at(
+    doc: &mut Document,
+    at: &EditPath,
+    start: usize,
+    end: usize,
+) -> Option<(usize, usize)> {
+    if end <= start {
+        return None;
+    }
+    with_paragraph_at(doc, at, move |p| {
+        let (j2, o2) = locate(p, end);
+        p.split_run(j2, o2);
+        let (j1, o1) = locate(p, start);
+        p.split_run(j1, o1);
+        let mut acc = 0usize;
+        let mut rs = None;
+        let mut re = None;
+        for j in 0..p.run_count() {
+            if rs.is_none() && acc >= start {
+                rs = Some(j);
+            }
+            if re.is_none() && acc >= end {
+                re = Some(j);
+            }
+            acc += p.run(j).map(|r| r.text().chars().count()).unwrap_or(0);
+        }
+        if acc < end {
+            return None;
+        }
+        Some((rs?, re.unwrap_or(p.run_count())))
+    })
+    .flatten()
+}
+
 /// The paragraph's list membership: (numId, level), or None.
 pub fn list_numbering_at(doc: &mut Document, at: &EditPath) -> Option<(u32, u32)> {
     with_paragraph_at(doc, at, |p| p.numbering_value()).flatten()
