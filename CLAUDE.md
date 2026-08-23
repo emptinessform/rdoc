@@ -30,7 +30,8 @@ wasm-pack build crates/rdoc-core --release --target web --out-dir ../../web/pkg 
 cd web && npm install && npm run build   # tsc -p .
 
 # 웹 데모 서버 (web/에서): 한국어 폰트를 web/malgun.ttf로 먼저 복사
-python -m http.server 8741
+python serve.py   # http.server 8741 + no-cache (모듈 캐시 방지)
+# ⚠ wasm/pkg 재빌드 후에는 browse restart (렌더러 메모리 캐시)
 
 # 브라우저 테스트 스위트: web/tests/ (실행 규약은 web/tests/README.md)
 ```
@@ -48,9 +49,9 @@ python -m http.server 8741
   후보), 재시작 페이지네이션+표/HF 캐시(F-X040 후보), 폴백 엔진
   유지+핸드오프, F-X038 튜닝, 미주 타입 필드 승격·노트/표/이미지 편집
   API, dense-form 레이아웃 수정(중첩 표·vMerge·exact 행·표 스타일
-  캐스케이드·셀 앵커), caller 폰트 family 별칭(FontFile.family 존중 —
-  업스트림 보고 후보). 구 브랜치 `svg-poc`(pre-0.8.0)와 `perf-caches`는
-  참고용 유산.
+  캐스케이드·셀 앵커), caller 폰트 family 별칭(#44/PR #45로 업스트림
+  제출), 리스트/링크/셀 병합/그리드 게터 등 에디터 지원 API.
+  구 브랜치 `svg-poc`(pre-0.8.0)와 `perf-caches`는 참고용 유산.
 - 업스트림 상태 (2026-08-23): #39/#40/#41 종결 — 성능 작업은 S52
   F-X039/40/43~47 강화판으로 수용 (v0.9.0·rpptx-v0.5.0 릴리스 노트
   크레딧 예정). #42/#43은 S53 **F-X048**(Dense form table fidelity)로
