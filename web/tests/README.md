@@ -11,27 +11,27 @@
 # 0) 서버 (워크스페이스 루트의 web/에서, 한국어 폰트를 web/malgun.ttf로 먼저 복사)
 python -m http.server 8741
 
-# 1) 스크립트는 /tmp 아래에 있어야 browse eval이 읽는다
-cp web/tests/ime-test.js /tmp/
+# 1) 러너 — 전체 배터리 (PASS/FAIL 집계, 실패 시 종료 코드 1)
+bash web/tests/run.sh
 
-# 2) 캐시 버스트 URL로 접속 → 주입 → 폴링 없이 대기 → 결과 읽기
+# 부분 실행 (접미사 -test.js 생략 가능)
+bash web/tests/run.sh ime paste
+
+# 환경 변수: RDOC_URL(기본 http://localhost:8741),
+#            RDOC_TEST_SLEEP(기본 16초), BROWSE_BIN(browse 바이너리)
+```
+
+러너 없이 한 스위트를 수동 디버깅할 때:
+
+```bash
+# 스크립트는 /tmp 아래에 있어야 browse eval이 읽는다.
+# 캐시 버스트 URL로 접속 → 주입 → 폴링 없이 대기 → 결과 읽기.
+cp web/tests/ime-test.js /tmp/
 B=~/.claude/skills/gstack/browse/dist/browse
 "$B" goto "http://localhost:8741/index.html?v=run1"
 "$B" eval /tmp/ime-test.js
 sleep 16                       # 무거운 wasm 동기 작업 중 폴링 금지
 "$B" js "window.__benchResult"
-```
-
-전체 실행 루프:
-
-```bash
-for t in web/tests/*-test.js; do
-  n=$(basename "$t"); cp "$t" /tmp/$n
-  "$B" goto "http://localhost:8741/index.html?v=run-$n" >/dev/null
-  "$B" eval /tmp/$n >/dev/null
-  sleep 16
-  echo "== $n: $("$B" js 'window.__benchResult')"
-done
 ```
 
 ## 규약
