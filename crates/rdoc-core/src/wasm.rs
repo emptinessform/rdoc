@@ -625,6 +625,21 @@ impl SvgConverter {
         self.mutate(move |d| crate::remove_hyperlink_at(d, &at, off), "unlink")
     }
 
+    /// Set multiplied line spacing over whole paragraphs (JSON array of
+    /// hit paths), as one history entry.
+    pub fn set_line_spacing_paths(&mut self, json: &str, multiple: f64) -> Result<String, JsValue> {
+        let paths: Vec<String> =
+            serde_json::from_str(json).map_err(|_| err("bad paths json"))?;
+        let ats: Vec<crate::EditPath> = paths
+            .iter()
+            .map(|p| parse_edit_path(p).ok_or_else(|| err("not an editable location")))
+            .collect::<Result<_, _>>()?;
+        self.mutate(
+            move |d| ats.iter().all(|at| crate::set_line_spacing_at(d, at, multiple)),
+            "line spacing",
+        )
+    }
+
     /// Toggle bullet/numbered list membership over whole paragraphs (JSON
     /// array of hit paths), as one history entry. Word semantics: if every
     /// paragraph is already a list of the requested kind, the list is

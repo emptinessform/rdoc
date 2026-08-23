@@ -14,7 +14,8 @@ import {
 } from "./edit.js";
 import {
   alignSelection, applyFontSize, applyFontColor, applyFontFamily,
-  styleSelection, tableOp, tabCell, toggleList, setListLevel, wireFormat,
+  styleSelection, tableOp, tabCell, toggleList, setListLevel,
+  applyLineSpacing, wireFormat,
 } from "./format.js";
 import {
   doPaste, insertImageBytes, selectImage, deleteSelectedImage, copySelection,
@@ -240,6 +241,7 @@ window.__t = {
   toggleList,
   listLevel: setListLevel,
   listInfo: (p: string) => S.conv.list_info(p),
+  lineSpacing: applyLineSpacing,
   openLink: openLinkBar,
   setLink: applyLink,
   removeLink,

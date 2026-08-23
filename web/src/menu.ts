@@ -10,7 +10,7 @@ import {
 } from "./edit.js";
 import { copySelection, cutSelection, doPaste } from "./clipboard.js";
 import { openFind, openReplace } from "./find.js";
-import { alignSelection, tableOp, toggleList } from "./format.js";
+import { alignSelection, tableOp, toggleList, applyLineSpacing } from "./format.js";
 import { openLinkBar, removeLink } from "./link.js";
 
 const COMMANDS: Record<string, () => void> = {
@@ -41,6 +41,9 @@ const COMMANDS: Record<string, () => void> = {
   alignR: () => alignSelection("r"),
   listBullet: () => toggleList("bullet"),
   listNumber: () => toggleList("number"),
+  spacing1: () => applyLineSpacing(1),
+  spacing15: () => applyLineSpacing(1.5),
+  spacing2: () => applyLineSpacing(2),
   rowAdd: () => tableOp("r"),
   rowDel: () => tableOp("R"),
   colAdd: () => tableOp("c"),

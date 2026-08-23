@@ -93,12 +93,10 @@ export function styleSelection(styleId: string) {
   });
 }
 
-// Bullet/numbered list toggle over the caret paragraph or every
-// paragraph the selection touches. Word semantics live in wasm
-// (all-on removes, mixed sets). Toggling adds/removes marker hits and
-// shifts indents, so selection refs go stale — collapse to a caret
-// (kept in place when there was one; text offsets are unchanged).
-export function toggleList(kind: "bullet" | "number") {
+// The paragraph paths a caret/selection touches, plus a caret to land
+// on afterwards — shared by the paragraph-level ops whose reflow makes
+// selection refs stale (lists, line spacing).
+function selectedParagraphPaths(): { paths: string[]; keep: { path: string; off: number } | null } | null {
   let paths: string[] = [];
   let fallback: { path: string; off: number } | null = null;
   const r = selRange();
@@ -113,11 +111,34 @@ export function toggleList(kind: "bullet" | "number") {
     paths = [r.pa];
     fallback = { path: r.pa, off: r.oa };
   } else if (S.caret) paths = [S.caret.path];
-  if (!paths.length) { report("목록: 캐럿을 두거나 선택하세요"); return; }
-  const keep = S.caret ? { ...S.caret } : fallback;
+  if (!paths.length) return null;
+  return { paths, keep: S.caret ? { ...S.caret } : fallback };
+}
+
+// Bullet/numbered list toggle over the caret paragraph or every
+// paragraph the selection touches. Word semantics live in wasm
+// (all-on removes, mixed sets). Toggling adds/removes marker hits and
+// shifts indents, so selection refs go stale — collapse to a caret
+// (kept in place when there was one; text offsets are unchanged).
+export function toggleList(kind: "bullet" | "number") {
+  const sel = selectedParagraphPaths();
+  if (!sel) { report("목록: 캐럿을 두거나 선택하세요"); return; }
   edit(() => {
-    const json = S.conv.toggle_list_paths(JSON.stringify(paths), kind === "bullet");
-    S.caret = keep;
+    const json = S.conv.toggle_list_paths(JSON.stringify(sel.paths), kind === "bullet");
+    S.caret = sel.keep;
+    S.sel = null;
+    return json;
+  });
+}
+
+// Multiplied line spacing (1.0 = single) over the same paragraph set.
+// Spacing reflows lines, so the selection collapses to a caret too.
+export function applyLineSpacing(multiple: number) {
+  const sel = selectedParagraphPaths();
+  if (!sel) { report("줄 간격: 캐럿을 두거나 선택하세요"); return; }
+  edit(() => {
+    const json = S.conv.set_line_spacing_paths(JSON.stringify(sel.paths), multiple);
+    S.caret = sel.keep;
     S.sel = null;
     return json;
   });
@@ -297,6 +318,13 @@ export function wireFormat() {
     fontsizeEl.blur();
   });
   fontsizeEl.addEventListener("keydown", (e) => e.stopPropagation());
+
+  const linespacingEl = document.getElementById("linespacing") as HTMLSelectElement;
+  linespacingEl.addEventListener("change", () => {
+    if (linespacingEl.value) applyLineSpacing(+linespacingEl.value);
+    linespacingEl.selectedIndex = 0;
+    linespacingEl.blur();
+  });
 
   const parastyleEl = document.getElementById("parastyle") as HTMLSelectElement;
   parastyleEl.addEventListener("change", () => {

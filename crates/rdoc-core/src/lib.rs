@@ -2303,6 +2303,18 @@ pub fn remove_hyperlink_at(doc: &mut Document, at: &EditPath, off: usize) -> boo
     .unwrap_or(false)
 }
 
+/// Set multiplied line spacing (1.0 = single) at any editable location.
+pub fn set_line_spacing_at(doc: &mut Document, at: &EditPath, multiple: f64) -> bool {
+    if !(0.5..=10.0).contains(&multiple) {
+        return false;
+    }
+    with_paragraph_at(doc, at, |p| {
+        p.set_line_spacing_multiple(multiple);
+        true
+    })
+    .unwrap_or(false)
+}
+
 /// The paragraph's list membership: (numId, level), or None.
 pub fn list_numbering_at(doc: &mut Document, at: &EditPath) -> Option<(u32, u32)> {
     with_paragraph_at(doc, at, |p| p.numbering_value()).flatten()
