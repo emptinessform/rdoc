@@ -505,6 +505,56 @@ impl SvgConverter {
         )
     }
 
+    /// Merge horizontally adjacent cells of one top-level-table row, as
+    /// one history entry. Input: JSON array of cell paragraph paths
+    /// ("d/T.R.C.P"); they must share the table and row and cover
+    /// contiguous cell indices.
+    pub fn merge_cells(&mut self, json: &str) -> Result<String, JsValue> {
+        let paths: Vec<String> =
+            serde_json::from_str(json).map_err(|_| err("bad paths json"))?;
+        let mut cells: Vec<(usize, usize, usize)> = Vec::new();
+        for path in &paths {
+            let Some(crate::EditPath::Doc(ch)) = parse_edit_path(path) else {
+                return Err(err("not a table cell"));
+            };
+            if ch.len() != 4 {
+                return Err(err("not a top-level table cell"));
+            }
+            cells.push((ch[0], ch[1], ch[2]));
+        }
+        cells.sort();
+        cells.dedup();
+        if cells.len() < 2 {
+            return Err(err("select at least two cells"));
+        }
+        let (t, r, c0) = cells[0];
+        if !cells.iter().all(|&(tt, rr, _)| tt == t && rr == r) {
+            return Err(err("cells must share one row"));
+        }
+        if !cells
+            .iter()
+            .enumerate()
+            .all(|(i, &(_, _, cc))| cc == c0 + i)
+        {
+            return Err(err("cells must be adjacent"));
+        }
+        let count = cells.len();
+        self.mutate(move |d| d.table_merge_cells(t, r, c0, count), "merge cells")
+    }
+
+    /// Split a horizontally merged cell back into its grid columns, as
+    /// one history entry. Input: any paragraph path inside the cell.
+    pub fn split_cell(&mut self, path: &str) -> Result<String, JsValue> {
+        let Some(crate::EditPath::Doc(ch)) = parse_edit_path(path) else {
+            return Err(err("not a table cell"));
+        };
+        if ch.len() != 4 {
+            return Err(err("not a top-level table cell"));
+        }
+        let (t, r, c) = (ch[0], ch[1], ch[2]);
+        self.mutate(move |d| d.table_split_cell(t, r, c), "split cell")
+    }
+
     /// Set paragraph alignment ('l' | 'c' | 'r' | 'j') for every path in
     /// the JSON string array, as one history entry (a selection can span
     /// several paragraphs).

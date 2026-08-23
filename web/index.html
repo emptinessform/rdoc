@@ -100,6 +100,8 @@
         <button data-cmd="rowDel">행 삭제</button>
         <button data-cmd="colAdd">오른쪽에 열 추가</button>
         <button data-cmd="colDel">열 삭제</button>
+        <button data-cmd="mergeCells">셀 병합</button>
+        <button data-cmd="splitCell">셀 분할</button>
       </div>
     </div>
     <div class="menu">
@@ -178,6 +180,8 @@
       <button data-op="R" title="행 삭제">행−</button>
       <button data-op="c" title="오른쪽에 열 추가">열+</button>
       <button data-op="C" title="열 삭제">열−</button>
+      <button id="mergebtn" title="셀 병합 (한 행의 인접 셀 선택)">병합</button>
+      <button id="splitbtn" title="셀 분할 (병합된 셀)">분할</button>
     </span>
     <span class="sep"></span>
     <button id="imgbtn" title="이미지 삽입 (캐럿 위치)">이미지</button>

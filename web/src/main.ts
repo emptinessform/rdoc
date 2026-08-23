@@ -15,7 +15,7 @@ import {
 import {
   alignSelection, applyFontSize, applyFontColor, applyFontFamily,
   styleSelection, tableOp, tabCell, toggleList, setListLevel,
-  applyLineSpacing, wireFormat,
+  applyLineSpacing, mergeCells, splitCell, wireFormat,
 } from "./format.js";
 import {
   doPaste, insertImageBytes, selectImage, deleteSelectedImage, copySelection,
@@ -229,6 +229,8 @@ window.__t = {
   paste: doPaste,
   align: alignSelection,
   tableOp,
+  mergeCells,
+  splitCell,
   tabCell: (dir: number) => tabCell(S.caret ? S.caret.path : S.sel ? getRun(S.sel.a)?.path ?? null : null, dir),
   setStyle: styleSelection,
   insertImage: insertImageBytes,

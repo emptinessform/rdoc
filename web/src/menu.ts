@@ -10,7 +10,9 @@ import {
 } from "./edit.js";
 import { copySelection, cutSelection, doPaste } from "./clipboard.js";
 import { openFind, openReplace } from "./find.js";
-import { alignSelection, tableOp, toggleList, applyLineSpacing } from "./format.js";
+import {
+  alignSelection, tableOp, toggleList, applyLineSpacing, mergeCells, splitCell,
+} from "./format.js";
 import { openLinkBar, removeLink } from "./link.js";
 
 const COMMANDS: Record<string, () => void> = {
@@ -48,6 +50,8 @@ const COMMANDS: Record<string, () => void> = {
   rowDel: () => tableOp("R"),
   colAdd: () => tableOp("c"),
   colDel: () => tableOp("C"),
+  mergeCells,
+  splitCell,
 };
 
 export function wireMenu() {

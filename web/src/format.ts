@@ -242,6 +242,36 @@ export function tableOp(op: string) {
   });
 }
 
+// Merge the adjacent same-row cells a scatter selection covers. The
+// caret lands in the merged cell; the first cell keeps its path.
+export function mergeCells() {
+  const r = selRange();
+  if (!r || r.kind !== "scatter") { report("병합: 한 행의 인접한 셀들을 선택하세요"); return; }
+  const paths = [...new Set(r.ranges.map((x) => x.path))];
+  const first = paths[0];
+  edit(() => {
+    const json = S.conv.merge_cells(JSON.stringify(paths));
+    S.caret = { path: first, off: 0 };
+    S.sel = null;
+    return json;
+  });
+}
+
+// Split the horizontally merged cell under the caret back into columns.
+export function splitCell() {
+  if (!S.caret || !/^d\/\d+\.\d+\.\d+\.\d+$/.test(S.caret.path)) {
+    report("분할: 병합된 셀에 캐럿을 두세요");
+    return;
+  }
+  const keep = { ...S.caret };
+  edit(() => {
+    const json = S.conv.split_cell(keep.path);
+    S.caret = keep;
+    S.sel = null;
+    return json;
+  });
+}
+
 // Word-style Tab in a table: move to the next/previous cell selecting its
 // content; Tab at the last cell appends a row (via the structure op).
 function landInCell(t: number, r: number, c: number): boolean {
@@ -297,9 +327,11 @@ export function wireFormat() {
     b.onclick = () => toggleList(b.dataset.list as "bullet" | "number");
   });
 
-  document.querySelectorAll<HTMLButtonElement>("#tblbtns button").forEach((b) => {
+  document.querySelectorAll<HTMLButtonElement>("#tblbtns button[data-op]").forEach((b) => {
     b.onclick = () => tableOp(b.dataset.op!);
   });
+  document.getElementById("mergebtn")!.onclick = mergeCells;
+  document.getElementById("splitbtn")!.onclick = splitCell;
 
   const fontcolorEl = document.getElementById("fontcolor") as HTMLInputElement;
   fontcolorEl.addEventListener("change", () => {
