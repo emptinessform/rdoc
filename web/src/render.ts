@@ -17,6 +17,8 @@ interface RenderDelta {
 
 const statusEl = document.getElementById("status")!;
 export const pagesEl = document.getElementById("pages")!;
+/// The document scroll container (the window no longer scrolls).
+export const scroller = document.getElementById("main")!;
 export const status = (m: string) => statusEl.textContent = m;
 
 export function applyZoom() {
@@ -182,7 +184,7 @@ export function wireRender() {
 
   // Scrolling toward a deferred page must never show stale content: drain
   // anything near the viewport immediately.
-  window.addEventListener("scroll", () => {
+  scroller.addEventListener("scroll", () => {
     if (!dirtyPages.size) return;
     let drained = false;
     for (const i of [...dirtyPages]) {

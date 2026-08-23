@@ -3,8 +3,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>rdoc editor (wasm)</title>
 <style>
-  body { font-family: system-ui, sans-serif; background: #4a4f57; margin: 0; }
-  header { background: #2b2e33; color: #eee; position: sticky; top: 0; z-index: 3; }
+  html, body { height: 100%; }
+  body { font-family: system-ui, sans-serif; background: #4a4f57; margin: 0;
+    display: flex; flex-direction: column; overflow: hidden; }
+  header { background: #2b2e33; color: #eee; flex: none; z-index: 3; }
+  /* The app row: an in-flow thumbnail panel plus the scrolling document
+     area — the panel occupies its own column and can never cover pages. */
+  #app { flex: 1; display: flex; min-height: 0; }
+  #main { flex: 1; overflow: auto; min-width: 0; }
 
   /* ---- menubar ---- */
   #menubar { display: flex; align-items: center; gap: 2px; padding: 4px 10px 0;
@@ -46,16 +52,20 @@
     border: 1px solid #4a4f57; border-radius: 6px; font: inherit; font-size: 13px; padding: 3px 8px; }
   #findcount { font-size: 12px; color: #9aa0a8; }
 
-  #pages { display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 24px; }
+  /* width:max-content + min-width:100%: pages wider than the viewport
+     scroll horizontally instead of clipping their left edge (the flex
+     centered-overflow trap); narrower content stays centered. */
+  #pages { display: flex; flex-direction: column; align-items: center; gap: 24px;
+    padding: 24px; width: max-content; min-width: 100%; box-sizing: border-box; }
   #pages svg { background: #fff; box-shadow: 0 3px 12px rgba(0,0,0,.45); height: auto; cursor: text; user-select: none; }
-  #thumbs { position: fixed; left: 0; top: 76px; bottom: 0; width: 132px;
-    overflow-y: auto; background: #33363c; padding: 10px 8px; z-index: 1;
-    display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  #thumbs { flex: none; width: 132px; overflow-y: auto; background: #33363c;
+    padding: 10px 8px; display: flex; flex-direction: column; gap: 8px;
+    align-items: center; border-right: 1px solid #4a4f57; }
+  #thumbs[hidden] { display: none; }
   #thumbs img { width: 108px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5);
     cursor: pointer; display: block; }
   #thumbs .cur { outline: 2px solid #1a73e8; }
   #thumbs .pageno { color: #aaa; font-size: 11px; margin: -4px 0 2px; }
-  body.thumbs-open #pages { margin-left: 132px; }
   .caret { animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
 
@@ -77,9 +87,6 @@
     /* Pages shrink to the screen; hit mapping goes through getScreenCTM,
        so CSS downscaling stays click-accurate. */
     #pages svg { max-width: 100%; }
-    /* Thumbnails overlay instead of pushing content on small screens. */
-    body.thumbs-open #pages { margin-left: 0; }
-    #thumbs { box-shadow: 4px 0 14px rgba(0,0,0,.5); }
     #status { flex-basis: 100%; order: 9; padding: 2px 4px 6px; }
   }
 </style>
@@ -272,7 +279,9 @@
     </span>
   </div>
 </header>
-<div id="thumbs" hidden></div>
-<div id="pages"></div>
+<div id="app">
+  <div id="thumbs" hidden></div>
+  <div id="main"><div id="pages"></div></div>
+</div>
 <input id="ime" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="position:fixed; top:0; left:-9999px; width:100px; opacity:0">
 <script type="module" src="./js/main.js"></script>

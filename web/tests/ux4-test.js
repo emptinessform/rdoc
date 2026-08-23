@@ -60,7 +60,7 @@ window.__benchResult = "pending";
   // 3. Drag auto-scroll: shrink the viewport is not possible from JS, so
   //    simulate: start a drag in the body, move the pointer to the bottom
   //    edge of the viewport, and verify the page scrolls down over time.
-  window.scrollTo(0, 0);
+  document.getElementById("main").scrollTo(0, 0);
   await new Promise(r => setTimeout(r, 100));
   const h0 = hitFor("d/1");
   const c0 = clientFor(h0.page, h0.h.x + 2, h0.h.y - 2);
@@ -69,9 +69,9 @@ window.__benchResult = "pending";
   const edgeY = window.innerHeight - 5;
   c0.svg.dispatchEvent(new MouseEvent("mousemove", { clientX: c0.cx + 40, clientY: c0.cy + 10, bubbles: true }));
   c0.svg.dispatchEvent(new MouseEvent("mousemove", { clientX: c0.cx + 40, clientY: edgeY, bubbles: true }));
-  const y0 = window.scrollY;
+  const y0 = document.getElementById("main").scrollTop;
   await new Promise(r => setTimeout(r, 600));
-  const y1 = window.scrollY;
+  const y1 = document.getElementById("main").scrollTop;
   window.dispatchEvent(new MouseEvent("mouseup", { clientX: c0.cx + 40, clientY: edgeY, bubbles: true }));
   res.info.scroll = { y0, y1 };
   check("drag near bottom edge auto-scrolls", y1 > y0 + 10);

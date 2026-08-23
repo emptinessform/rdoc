@@ -3,7 +3,7 @@
 
 import { S, chars, getRun, orderSel } from "./state.js";
 import type { Ref } from "./state.js";
-import { pagesEl, report } from "./render.js";
+import { pagesEl, report, scroller } from "./render.js";
 import {
   findHit, refAt, drawCaret, drawSelection, selectParaOffsets,
   lineEdgeOff, lineTarget,
@@ -113,10 +113,11 @@ function dragAutoScroll() {
   const m = mouse;
   if (!m || !m.dragged) { if (m) m.raf = null; return; }
   const y = m.lastY!;
-  const dy = y < SCROLL_EDGE ? y - SCROLL_EDGE
-           : y > innerHeight - SCROLL_EDGE ? y - (innerHeight - SCROLL_EDGE) : 0;
+  const mr = scroller.getBoundingClientRect();
+  const dy = y < mr.top + SCROLL_EDGE ? y - (mr.top + SCROLL_EDGE)
+           : y > mr.bottom - SCROLL_EDGE ? y - (mr.bottom - SCROLL_EDGE) : 0;
   if (dy) {
-    window.scrollBy(0, dy * 0.4);
+    scroller.scrollBy(0, dy * 0.4);
     extendDragTo(m.lastX!, m.lastY!);
   }
   m.raf = requestAnimationFrame(dragAutoScroll);

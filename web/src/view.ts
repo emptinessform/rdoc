@@ -7,7 +7,7 @@ import type { HitRun, Pos, Ref } from "./state.js";
 
 /** A document position resolved to a concrete on-page hit run. */
 export interface Vis { hit: HitRun; k: number }
-import { pagesEl } from "./render.js";
+import { pagesEl, scroller } from "./render.js";
 
 export function findHit(page: number, x: number, y: number): Vis | null {
   let best: HitRun | null = null, bestScore = Infinity;
@@ -57,9 +57,9 @@ export function drawCaret() {
     const el = document.querySelector(".caret");
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const headerH = 70;
-    if (r.top < headerH || r.bottom > window.innerHeight - 10) {
-      window.scrollBy({ top: r.top - window.innerHeight / 2, behavior: "instant" });
+    const m = scroller.getBoundingClientRect();
+    if (r.top < m.top + 6 || r.bottom > m.bottom - 10) {
+      scroller.scrollBy({ top: r.top - (m.top + m.height / 2), behavior: "instant" });
     }
   });
   const { hit: h, k } = vis;

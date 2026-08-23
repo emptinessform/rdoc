@@ -4,7 +4,7 @@
 // overlay redrawn after edits/drains.
 
 import { S, chars, allHits, cum, orderSel } from "./state.js";
-import { pagesEl, report } from "./render.js";
+import { pagesEl, report, scroller } from "./render.js";
 import { drawCaret, drawSelection, refForOffset } from "./view.js";
 import { edit, replaceSelWith } from "./edit.js";
 import type { ParaRange } from "./edit.js";
@@ -112,8 +112,9 @@ export function gotoFind(dir: number) {
   const r0 = document.querySelector(".selrect");
   if (r0) {
     const rc = r0.getBoundingClientRect();
-    if (rc.top < 0 || rc.bottom > innerHeight)
-      window.scrollBy({ top: rc.top - innerHeight / 2 });
+    const m = scroller.getBoundingClientRect();
+    if (rc.top < m.top || rc.bottom > m.bottom)
+      scroller.scrollBy({ top: rc.top - (m.top + m.height / 2) });
   }
   report(`찾기 ${findCur + 1}/${findMatches.length}`);
 }

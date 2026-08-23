@@ -41,11 +41,11 @@ window.__benchResult = "pending";
   check("sidebar shrinks back", t.thumbs().count === document.querySelectorAll("#pages svg").length);
 
   // 4. Clicking a thumb scrolls to that page.
-  window.scrollTo(0, 0);
+  document.getElementById("main").scrollTo(0, 0);
   const n = t.thumbs().count;
   document.querySelectorAll("#thumbs img")[n - 1].click();
   await new Promise(r => setTimeout(r, 200));
-  check("thumb click scrolls", window.scrollY > 100);
+  check("thumb click scrolls", document.getElementById("main").scrollTop > 100);
 
   // 5. Close hides the sidebar.
   t.toggleThumbs();
