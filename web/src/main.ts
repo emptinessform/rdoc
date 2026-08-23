@@ -34,6 +34,7 @@ import {
   resolveCommentAtCaret, wireCommentBar,
 } from "./comments.js";
 import { applyLink, removeLink, openLinkBar, wireLink } from "./link.js";
+import { wireColResize } from "./colresize.js";
 
 declare global {
   interface Window {
@@ -128,6 +129,7 @@ wireInput();
 wireMenu();
 wireLink();
 wireCommentBar();
+wireColResize();
 
 // ---- load ------------------------------------------------------------------
 
@@ -249,6 +251,11 @@ window.__t = {
   mergeCells,
   splitCell,
   insertTable: (rows: number, cols: number) => { openTableBar(); applyInsertTable(rows, cols); },
+  tableGrid: (p: string) => JSON.parse(S.conv.table_grid_pt(p)),
+  setColWidth: (p: string, col: number, pt: number) => {
+    const j = S.conv.set_table_column_width(p, col, pt);
+    apply(j, 0);
+  },
   tabCell: (dir: number) => tabCell(S.caret ? S.caret.path : S.sel ? getRun(S.sel.a)?.path ?? null : null, dir),
   setStyle: styleSelection,
   insertImage: insertImageBytes,

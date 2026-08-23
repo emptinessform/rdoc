@@ -16,6 +16,22 @@ use crate::{
 
 const UNDO_CAP: usize = 100;
 
+/// Ordinal among body tables for the table at `body_index`, or None
+/// when that body item is not a table (Document::table/table_mut count
+/// tables, while our paths carry body content indices).
+fn table_ordinal(doc: &rdocx::Document, body_index: usize) -> Option<usize> {
+    let mut ordinal = 0usize;
+    for (i, item) in doc.body_items().enumerate() {
+        if i == body_index {
+            return matches!(item, rdocx::BodyItemRef::Table(_)).then_some(ordinal);
+        }
+        if matches!(item, rdocx::BodyItemRef::Table(_)) {
+            ordinal += 1;
+        }
+    }
+    None
+}
+
 #[wasm_bindgen]
 pub struct SvgConverter {
     fonts: Vec<(String, Vec<u8>)>,
@@ -818,6 +834,54 @@ impl SvgConverter {
                 true
             },
             "insert table",
+        )
+    }
+
+    /// Grid column widths (pt) of the table at a body index ("d/T" or any
+    /// cell path inside it). Read-only.
+    pub fn table_grid_pt(&mut self, path: &str) -> Result<String, JsValue> {
+        let Some(crate::EditPath::Doc(ch)) = parse_edit_path(path) else {
+            return Err(err("not a body table"));
+        };
+        let doc = self.doc.as_ref().ok_or_else(|| err("no document loaded"))?;
+        let Some(ordinal) = table_ordinal(doc, ch[0]) else {
+            return Err(err("no table at that body index"));
+        };
+        let widths: Vec<f64> = doc
+            .table(ordinal)
+            .map(|t| t.grid_column_widths())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|tw| tw as f64 / 20.0)
+            .collect();
+        serde_json::to_string(&widths).map_err(err)
+    }
+
+    /// Set one grid column's width (pt) of the table at a body index —
+    /// spanning cells receive summed widths upstream. One history entry.
+    pub fn set_table_column_width(
+        &mut self,
+        path: &str,
+        col: usize,
+        width_pt: f64,
+    ) -> Result<String, JsValue> {
+        if !(10.0..=1000.0).contains(&width_pt) {
+            return Err(err("column width out of range"));
+        }
+        let Some(crate::EditPath::Doc(ch)) = parse_edit_path(path) else {
+            return Err(err("not a body table"));
+        };
+        let body_index = ch[0];
+        self.mutate(
+            move |d| {
+                let Some(ordinal) = table_ordinal(d, body_index) else {
+                    return false;
+                };
+                d.table_mut(ordinal)
+                    .map(|mut t| t.set_column_width(col, rdocx::Length::twips((width_pt * 20.0) as i32)))
+                    .unwrap_or(false)
+            },
+            "column width",
         )
     }
 
