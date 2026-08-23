@@ -1,5 +1,6 @@
 <!doctype html>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>rdoc editor (wasm)</title>
 <style>
   body { font-family: system-ui, sans-serif; background: #4a4f57; margin: 0; }
@@ -57,6 +58,21 @@
   body.thumbs-open #pages { margin-left: 132px; }
   .caret { animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
+
+  /* ---- narrow screens (mobile) ---- */
+  @media (max-width: 640px) {
+    #menubar { padding: 2px 6px 0; }
+    #menubar .brand { margin: 0 6px 0 2px; }
+    #toolbar { padding: 4px 6px; gap: 4px; }
+    #pages { padding: 10px 4px; gap: 12px; }
+    /* Pages shrink to the screen; hit mapping goes through getScreenCTM,
+       so CSS downscaling stays click-accurate. */
+    #pages svg { max-width: 100%; }
+    /* Thumbnails overlay instead of pushing content on small screens. */
+    body.thumbs-open #pages { margin-left: 0; }
+    #thumbs { box-shadow: 4px 0 14px rgba(0,0,0,.5); }
+    #status { flex-basis: 100%; order: 9; padding: 2px 4px 6px; }
+  }
 </style>
 <header>
   <div id="menubar">
@@ -243,5 +259,5 @@
 </header>
 <div id="thumbs" hidden></div>
 <div id="pages"></div>
-<input id="ime" autocomplete="off" style="position:fixed; top:0; left:-9999px; width:100px; opacity:0">
+<input id="ime" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="position:fixed; top:0; left:-9999px; width:100px; opacity:0">
 <script type="module" src="./js/main.js"></script>
