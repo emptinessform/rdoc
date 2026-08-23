@@ -961,6 +961,17 @@ impl SvgConverter {
         )
     }
 
+    /// Resize the `index`-th inline image (SVG DOM `<image>` order) to
+    /// the given width in pt, keeping its aspect ratio. One history
+    /// entry.
+    pub fn resize_image(&mut self, index: usize, width_pt: f64) -> Result<String, JsValue> {
+        if !(10.0..=1000.0).contains(&width_pt) {
+            return Err(err("image width out of range"));
+        }
+        let width_emu = (width_pt * 12700.0) as i64;
+        self.mutate(move |d| d.resize_inline_image(index, width_emu), "resize image")
+    }
+
     /// Set all borders (outer edges + inner gridlines) of the table at a
     /// body index. Style: none|single|thick|double|dotted|dashed|dotdash|
     /// wave; width in pt (0.25..6); color as 6-digit hex. One history

@@ -7,6 +7,7 @@ import { drawCaret, drawSelection, selectedText } from "./view.js";
 import { edit, deleteSel, replaceSelWith } from "./edit.js";
 import { finalizeComposition } from "./ime.js";
 import { findq, replq } from "./find.js";
+import { drawImageHandle, clearImageHandle } from "./imgresize.js";
 
 // Plain text only. Multi-line text becomes paragraph splits (one history
 // entry via wasm paste_text). A selection is replaced first: single-line
@@ -48,6 +49,7 @@ export async function insertImageBytes(bytes: Uint8Array, name: string) {
 export function clearImageSel() {
   if (S.imageSel && S.imageSel.el) S.imageSel.el.style.outline = "";
   S.imageSel = null;
+  clearImageHandle();
 }
 
 export function selectImage(el: SVGImageElement) {
@@ -62,7 +64,8 @@ export function selectImage(el: SVGImageElement) {
   drawSelection();
   el.style.outline = "2px solid #1a73e8";
   S.imageSel = { el, index };
-  report(`이미지 선택 (${index + 1}번째) — Delete로 삭제`);
+  drawImageHandle();
+  report(`이미지 선택 (${index + 1}번째) — 모서리 핸들로 크기, Delete로 삭제`);
 }
 
 export function deleteSelectedImage() {

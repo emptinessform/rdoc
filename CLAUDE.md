@@ -50,8 +50,9 @@ python serve.py   # http.server 8741 + no-cache (모듈 캐시 방지)
   유지+핸드오프, F-X038 튜닝, 미주 타입 필드 승격·노트/표/이미지 편집
   API, dense-form 레이아웃 수정(중첩 표·vMerge·exact 행·표 스타일
   캐스케이드·셀 앵커), caller 폰트 family 별칭(#44/PR #45로 업스트림
-  제출), 리스트/링크/셀 병합/그리드 게터/본문 항목 이동(move_content)
-  등 에디터 지원 API. SBOdf도 같은 브랜치에 커밋한다(탭 스톱 등).
+  제출), 리스트/링크/셀 병합/그리드 게터/본문 항목 이동(move_content)/
+  이미지 리사이즈(resize_inline_image) 등 에디터 지원 API. SBOdf도
+  같은 브랜치에 커밋한다(탭 스톱 등).
   구 브랜치 `svg-poc`(pre-0.8.0)와 `perf-caches`는 참고용 유산.
 - 업스트림 상태 (2026-08-23): #39/#40/#41 종결 — 성능 작업은 S52
   F-X039/40/43~47 강화판으로 수용 (v0.9.0·rpptx-v0.5.0 릴리스 노트

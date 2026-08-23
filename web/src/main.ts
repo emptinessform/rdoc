@@ -37,6 +37,7 @@ import { applyLink, removeLink, openLinkBar, wireLink } from "./link.js";
 import { wireColResize } from "./colresize.js";
 import { cellSel, setCellSel, clearCellSel } from "./cellsel.js";
 import { wireTableHandles } from "./tablehandle.js";
+import { wireImageResize } from "./imgresize.js";
 
 declare global {
   interface Window {
@@ -133,6 +134,7 @@ wireLink();
 wireCommentBar();
 wireColResize();
 wireTableHandles();
+wireImageResize();
 
 // ---- load ------------------------------------------------------------------
 
@@ -287,6 +289,10 @@ window.__t = {
   selectImageAt: (k: number) => selectImage(document.querySelectorAll<SVGImageElement>("#pages svg image")[k]),
   imageSel: () => (S.imageSel ? S.imageSel.index : null),
   deleteImage: deleteSelectedImage,
+  resizeImage: (k: number, widthPt: number) => {
+    const j = S.conv.resize_image(k, widthPt);
+    apply(j, 0);
+  },
   fontSize: applyFontSize,
   fontColor: applyFontColor,
   fontFamily: applyFontFamily,
