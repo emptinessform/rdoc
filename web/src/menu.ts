@@ -78,6 +78,20 @@ const COMMANDS: Record<string, () => void> = {
   sampleFonts: () => void loadSample("./fontmap-test.docx", () => {
     report("한국어 글꼴 매핑 샘플 — 굴림·돋움은 산세리프, 바탕·궁서는 세리프");
   }),
+  savePdf: () => {
+    try {
+      const bytes = S.conv.save_pdf();
+      const blob = new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "rdoc.pdf";
+      a.click();
+      URL.revokeObjectURL(a.href);
+      report(`PDF 저장: ${bytes.length.toLocaleString()} bytes`);
+    } catch (err) {
+      report(`PDF 저장 실패: ${err}`);
+    }
+  },
   docStats: () => {
     try {
       const st = JSON.parse(S.conv.doc_stats());

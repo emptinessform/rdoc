@@ -419,6 +419,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "oxml-layout",
+ "oxml-pdf",
  "rdocx",
  "serde",
  "serde_json",

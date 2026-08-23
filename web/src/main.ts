@@ -193,6 +193,7 @@ window.__t = {
   textAt: (p: string) => S.conv.paragraph_text_at(p),
   pathOrder: (p: string) => S.conv.path_order(p),
   saveDocx: () => S.conv.save_docx(),
+  savePdf: () => S.conv.save_pdf(),
   insertFootnote,
   deleteFootnote,
   insertEndnote,

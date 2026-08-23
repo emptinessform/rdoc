@@ -62,6 +62,11 @@ fn main() {
         fs::write(out_dir.join(format!("page-{}.ref.png", i + 1)), png).expect("write png");
     }
 
+    // PDF from the same layout the SVGs came from.
+    let pdf = oxml_pdf::render_to_pdf(&layout.layout);
+    fs::write(out_dir.join("poc.pdf"), &pdf).expect("write pdf");
+    println!("wrote {} ({} bytes)", out_dir.join("poc.pdf").display(), pdf.len());
+
     write_index(out_dir, layout.layout.pages.len());
     println!("wrote {}", out_dir.join("index.html").display());
 }

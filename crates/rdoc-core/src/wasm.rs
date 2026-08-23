@@ -885,6 +885,33 @@ impl SvgConverter {
         )
     }
 
+    /// Render the current document to PDF bytes — same fonts, aliases,
+    /// and revision view as the screen. Read-only (no history entry).
+    pub fn save_pdf(&mut self) -> Result<Vec<u8>, JsValue> {
+        let doc = self.doc.as_ref().ok_or_else(|| err("no document loaded"))?;
+        let fonts: Vec<(&str, &[u8])> = self
+            .fonts
+            .iter()
+            .map(|(family, data)| (family.as_str(), data.as_slice()))
+            .collect();
+        let aliases: Vec<(&str, &str)> = self
+            .aliases
+            .iter()
+            .map(|(requested, target)| (requested.as_str(), target.as_str()))
+            .collect();
+        let options = rdocx::RenderOptions {
+            revision_view: if self.tracked_view {
+                rdocx::RevisionView::Tracked
+            } else {
+                rdocx::RevisionView::Accepted
+            },
+        };
+        let layout = doc
+            .layout_with_fonts_aliases_options_and_bundled_fallback(&fonts, &aliases, options)
+            .map_err(err)?;
+        Ok(oxml_pdf::render_to_pdf(&layout.layout))
+    }
+
     /// Scale every grid column of the table at a body index so the total
     /// width becomes `total_pt` (proportional resize). One history entry.
     pub fn set_table_total_width(
