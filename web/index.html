@@ -3,14 +3,50 @@
 <title>rdoc editor (wasm)</title>
 <style>
   body { font-family: system-ui, sans-serif; background: #4a4f57; margin: 0; }
-  header { background: #2b2e33; color: #eee; padding: 10px 20px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; position: sticky; top: 0; z-index: 2; }
-  header h1 { font-size: 15px; margin: 0 10px 0 0; font-weight: 600; }
-  button, input[type=file], select { font: inherit; }
-  #status { color: #9fd49f; font-size: 13px; }
-  #hint { color: #aaa; font-size: 12px; }
+  header { background: #2b2e33; color: #eee; position: sticky; top: 0; z-index: 3; }
+
+  /* ---- menubar ---- */
+  #menubar { display: flex; align-items: center; gap: 2px; padding: 4px 10px 0;
+    border-bottom: 1px solid #3a3e45; flex-wrap: wrap; }
+  #menubar .brand { font-size: 15px; font-weight: 700; margin: 0 12px 0 4px; color: #fff; }
+  .menu { position: relative; }
+  .menu > .mtitle { background: none; border: 0; color: #ddd; font: inherit;
+    font-size: 13px; padding: 6px 10px; border-radius: 6px 6px 0 0; cursor: default; }
+  .menu.open > .mtitle, .menu > .mtitle:hover { background: #3a3e45; color: #fff; }
+  .mlist { display: none; position: absolute; left: 0; top: 100%; min-width: 230px;
+    background: #33363c; border: 1px solid #4a4f57; border-radius: 0 8px 8px 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.5); padding: 6px; z-index: 4; }
+  .menu.open > .mlist { display: block; }
+  .mlist button { display: flex; width: 100%; align-items: center; gap: 10px;
+    background: none; border: 0; color: #eee; font: inherit; font-size: 13px;
+    padding: 6px 10px; border-radius: 5px; text-align: left; cursor: default; }
+  .mlist button:hover { background: #1a73e8; color: #fff; }
+  .mlist button:hover kbd { color: #cfe0ff; }
+  .mlist kbd { margin-left: auto; font: 11px ui-monospace, monospace; color: #9aa0a8; }
+  .mlist hr { border: 0; border-top: 1px solid #454a52; margin: 5px 4px; }
+  #status { margin-left: auto; color: #9fd49f; font-size: 12px; padding: 6px 4px; }
+
+  /* ---- toolbar ---- */
+  #toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+    flex-wrap: wrap; }
+  #toolbar .sep { width: 1px; height: 20px; background: #454a52; margin: 0 4px; }
+  #toolbar button, #toolbar select, #toolbar input[type=number] {
+    background: #3a3e45; color: #eee; border: 1px solid #4a4f57; border-radius: 6px;
+    font: inherit; font-size: 13px; padding: 3px 9px; }
+  #toolbar button:hover { background: #4a4f57; }
+  #toolbar button b, #toolbar button i, #toolbar button u { pointer-events: none; }
+  #toolbar input[type=color] { width: 26px; height: 24px; padding: 1px;
+    border: 1px solid #4a4f57; border-radius: 6px; background: #3a3e45; }
+  #toolbar label { font-size: 12px; color: #bbb; display: flex; align-items: center; gap: 5px; }
+  #findbar { display: flex; align-items: center; gap: 4px; }
+  #findbar[hidden] { display: none; }
+  #findbar input { background: #23262b; color: #eee; border: 1px solid #4a4f57;
+    border-radius: 6px; font: inherit; font-size: 13px; padding: 3px 8px; }
+  #findcount { font-size: 12px; color: #9aa0a8; }
+
   #pages { display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 24px; }
   #pages svg { background: #fff; box-shadow: 0 3px 12px rgba(0,0,0,.45); height: auto; cursor: text; user-select: none; }
-  #thumbs { position: fixed; left: 0; top: 64px; bottom: 0; width: 132px;
+  #thumbs { position: fixed; left: 0; top: 76px; bottom: 0; width: 132px;
     overflow-y: auto; background: #33363c; padding: 10px 8px; z-index: 1;
     display: flex; flex-direction: column; gap: 8px; align-items: center; }
   #thumbs img { width: 108px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5);
@@ -22,56 +58,121 @@
   @keyframes blink { 50% { opacity: 0; } }
 </style>
 <header>
-  <h1>rdoc editor</h1>
-  <button id="demo">Load demo</button>
-  <label><input type="file" id="file" accept=".docx"></label>
-  <button id="save">Save .docx</button>
-  <button id="thumbtoggle" title="페이지 목록">🗂</button>
-  <label>zoom <select id="zoom">
-    <option value="0.75">75%</option>
-    <option value="1" selected>100%</option>
-    <option value="1.25">125%</option>
-    <option value="1.5">150%</option>
-    <option value="2">200%</option>
-  </select></label>
-  <label title="글자 크기 (pt)">크기
-    <input type="number" id="fontsize" min="6" max="96" step="1" style="width:3.2em" placeholder="pt">
-  </label>
-  <label title="이미지 삽입 (캐럿 위치)">
-    <button id="imgbtn">이미지</button>
+  <div id="menubar">
+    <span class="brand">rdoc</span>
+    <div class="menu">
+      <button class="mtitle">파일</button>
+      <div class="mlist">
+        <button id="demo">데모 문서 열기</button>
+        <button data-cmd="openFile">열기…</button>
+        <hr>
+        <button id="save">.docx로 저장</button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="mtitle">편집</button>
+      <div class="mlist">
+        <button data-cmd="undo">실행 취소<kbd>Ctrl+Z</kbd></button>
+        <button data-cmd="redo">다시 실행<kbd>Ctrl+Y</kbd></button>
+        <hr>
+        <button data-cmd="cut">잘라내기<kbd>Ctrl+X</kbd></button>
+        <button data-cmd="copy">복사<kbd>Ctrl+C</kbd></button>
+        <button data-cmd="paste">붙여넣기<kbd>Ctrl+V</kbd></button>
+        <button data-cmd="selectAll">모두 선택<kbd>Ctrl+A</kbd></button>
+        <hr>
+        <button data-cmd="find">찾기<kbd>Ctrl+F</kbd></button>
+        <button data-cmd="replace">바꾸기<kbd>Ctrl+H</kbd></button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="mtitle">삽입</button>
+      <div class="mlist">
+        <button data-cmd="insertImage">이미지…</button>
+        <hr>
+        <button data-cmd="footnote">각주<kbd>Ctrl+Alt+F</kbd></button>
+        <button data-cmd="endnote">미주<kbd>Ctrl+Alt+E</kbd></button>
+        <button data-cmd="deleteNote">각주/미주 삭제<kbd>Ctrl+Alt+D</kbd></button>
+        <hr>
+        <button data-cmd="rowAdd">아래에 행 추가</button>
+        <button data-cmd="rowDel">행 삭제</button>
+        <button data-cmd="colAdd">오른쪽에 열 추가</button>
+        <button data-cmd="colDel">열 삭제</button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="mtitle">서식</button>
+      <div class="mlist">
+        <button data-cmd="bold">굵게<kbd>Ctrl+B</kbd></button>
+        <button data-cmd="italic">기울임<kbd>Ctrl+I</kbd></button>
+        <button data-cmd="underline">밑줄<kbd>Ctrl+U</kbd></button>
+        <hr>
+        <button data-cmd="alignL">왼쪽 정렬<kbd>Ctrl+L</kbd></button>
+        <button data-cmd="alignC">가운데 정렬<kbd>Ctrl+E</kbd></button>
+        <button data-cmd="alignR">오른쪽 정렬<kbd>Ctrl+R</kbd></button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="mtitle">보기</button>
+      <div class="mlist">
+        <button id="thumbtoggle">페이지 목록</button>
+      </div>
+    </div>
+    <span id="status">loading wasm…</span>
+  </div>
+  <div id="toolbar">
+    <span id="fmtbtns">
+      <button data-fmt="b" title="굵게 (Ctrl+B)"><b>B</b></button>
+      <button data-fmt="i" title="기울임 (Ctrl+I)"><i>I</i></button>
+      <button data-fmt="u" title="밑줄 (Ctrl+U)"><u>U</u></button>
+    </span>
+    <span id="alignbtns">
+      <button data-align="l" title="왼쪽 정렬 (Ctrl+L)">⮜</button>
+      <button data-align="c" title="가운데 정렬 (Ctrl+E)">⬌</button>
+      <button data-align="r" title="오른쪽 정렬 (Ctrl+R)">⮞</button>
+    </span>
+    <span class="sep"></span>
+    <label title="글자 크기 (pt)">크기
+      <input type="number" id="fontsize" min="6" max="96" step="1" style="width:3.4em" placeholder="pt">
+    </label>
+    <input type="color" id="fontcolor" value="#c00000" title="글자 색 (선택 범위)">
+    <select id="parastyle" title="문단 스타일">
+      <option value="" selected disabled>스타일</option>
+      <option value="Normal">본문</option>
+      <option value="Heading1">제목 1</option>
+      <option value="Heading2">제목 2</option>
+      <option value="Heading3">제목 3</option>
+    </select>
+    <span class="sep"></span>
+    <span id="tblbtns" title="표: 캐럿 셀 기준">
+      <button data-op="r" title="아래에 행 추가">행+</button>
+      <button data-op="R" title="행 삭제">행−</button>
+      <button data-op="c" title="오른쪽에 열 추가">열+</button>
+      <button data-op="C" title="열 삭제">열−</button>
+    </span>
+    <span class="sep"></span>
+    <button id="imgbtn" title="이미지 삽입 (캐럿 위치)">이미지</button>
     <input type="file" id="imgfile" accept="image/*" style="display:none">
-  </label>
-  <select id="parastyle" title="문단 스타일">
-    <option value="" selected disabled>스타일</option>
-    <option value="Normal">본문</option>
-    <option value="Heading1">제목 1</option>
-    <option value="Heading2">제목 2</option>
-    <option value="Heading3">제목 3</option>
-  </select>
-  <input type="color" id="fontcolor" value="#c00000" title="글자 색 (선택 범위)" style="width:2.2em; height:1.7em; padding:1px">
-  <span id="alignbtns">
-    <button data-align="l" title="왼쪽 정렬 (Ctrl+L)">⮜</button>
-    <button data-align="c" title="가운데 정렬 (Ctrl+E)">⬌</button>
-    <button data-align="r" title="오른쪽 정렬 (Ctrl+R)">⮞</button>
-  </span>
-  <span id="tblbtns" title="표: 캐럿 셀 기준">
-    <button data-op="r" title="아래에 행 추가">행+</button>
-    <button data-op="R" title="행 삭제">행−</button>
-    <button data-op="c" title="오른쪽에 열 추가">열+</button>
-    <button data-op="C" title="열 삭제">열−</button>
-  </span>
-  <span id="findbar" hidden>
-    <input id="findq" placeholder="찾기" autocomplete="off" size="14">
-    <span id="findcount"></span>
-    <button id="findprev" title="이전 (Shift+Enter)">▲</button>
-    <button id="findnext" title="다음 (Enter)">▼</button>
-    <input id="replq" placeholder="바꾸기" autocomplete="off" size="12">
-    <button id="replone" title="현재 매치 바꾸기">바꾸기</button>
-    <button id="replall" title="모두 바꾸기">모두</button>
-    <button id="findclose" title="닫기 (Esc)">✕</button>
-  </span>
-  <span id="status">loading wasm…</span>
-  <span id="hint">click: caret · drag: select · type/Enter/Backspace/화살표/표 Tab · Ctrl+B/I/U · Ctrl+L/E/R 정렬 · Ctrl+Z/Y · Ctrl+C/X/V · Ctrl+F 찾기/H 바꾸기 · Ctrl+Alt+F 각주/E 미주/D 삭제 · 한글 IME</span>
+    <input type="file" id="file" accept=".docx" style="display:none">
+    <span class="sep"></span>
+    <label>zoom <select id="zoom">
+      <option value="0.75">75%</option>
+      <option value="1" selected>100%</option>
+      <option value="1.25">125%</option>
+      <option value="1.5">150%</option>
+      <option value="2">200%</option>
+    </select></label>
+    <span id="findbar" hidden>
+      <span class="sep"></span>
+      <input id="findq" placeholder="찾기" autocomplete="off" size="14">
+      <span id="findcount"></span>
+      <button id="findprev" title="이전 (Shift+Enter)">▲</button>
+      <button id="findnext" title="다음 (Enter)">▼</button>
+      <input id="replq" placeholder="바꾸기" autocomplete="off" size="12">
+      <button id="replone" title="현재 매치 바꾸기">바꾸기</button>
+      <button id="replall" title="모두 바꾸기">모두</button>
+      <button id="findclose" title="닫기 (Esc)">✕</button>
+    </span>
+  </div>
 </header>
 <div id="thumbs" hidden></div>
 <div id="pages"></div>

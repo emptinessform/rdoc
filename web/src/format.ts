@@ -4,7 +4,7 @@
 import { S, chars, orderSel } from "./state.js";
 import { report } from "./render.js";
 import { drawCaret, drawSelection, selectParaOffsets, refForOffset } from "./view.js";
-import { edit, selRange, selectionRanges } from "./edit.js";
+import { edit, selRange, selectionRanges, toggleFmt } from "./edit.js";
 
 // Paragraph alignment for the caret paragraph or every paragraph the
 // selection touches, as one history entry. Text is unchanged, so the
@@ -138,6 +138,10 @@ export function tabCell(path: string | null | undefined, dir: number): boolean {
 }
 
 export function wireFormat() {
+  document.querySelectorAll<HTMLButtonElement>("#fmtbtns button").forEach((b) => {
+    b.onclick = () => toggleFmt(b.dataset.fmt!);
+  });
+
   document.querySelectorAll<HTMLButtonElement>("#alignbtns button").forEach((b) => {
     b.onclick = () => alignSelection(b.dataset.align!);
   });

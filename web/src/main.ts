@@ -26,6 +26,7 @@ import {
 } from "./find.js";
 import { imeEl, wireIme } from "./ime.js";
 import { clickAt, wireInput } from "./input.js";
+import { wireMenu } from "./menu.js";
 
 declare global {
   interface Window {
@@ -102,6 +103,7 @@ wireClipboard();
 wireFormat();
 wireIme();
 wireInput();
+wireMenu();
 
 // ---- load ------------------------------------------------------------------
 
