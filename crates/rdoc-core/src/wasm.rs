@@ -538,6 +538,47 @@ impl SvgConverter {
         Ok(!doc.revisions().is_empty())
     }
 
+    /// The document's comments as JSON
+    /// `[{"id","author","text","resolved"}]`. Read-only.
+    pub fn comment_list(&mut self) -> Result<String, JsValue> {
+        let doc = self.doc.as_ref().ok_or_else(|| err("no document loaded"))?;
+        let items: Vec<serde_json::Value> = doc
+            .comments()
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "id": c.id(),
+                    "author": c.author(),
+                    "text": c.text(),
+                    "resolved": c.resolved(),
+                })
+            })
+            .collect();
+        serde_json::to_string(&items).map_err(err)
+    }
+
+    /// Comment anchor spans in top-level body paragraphs as JSON
+    /// `[{"id","path","start","end"}]` (char offsets). Comments anchored
+    /// inside tables are not reported yet. Read-only.
+    pub fn comment_spans(&mut self) -> Result<String, JsValue> {
+        let doc = self.doc.as_ref().ok_or_else(|| err("no document loaded"))?;
+        let mut out: Vec<serde_json::Value> = Vec::new();
+        for (i, item) in doc.body_items().enumerate() {
+            let rdocx::BodyItemRef::Paragraph(p) = item else {
+                continue;
+            };
+            for (id, start, end) in p.comment_spans() {
+                out.push(serde_json::json!({
+                    "id": id,
+                    "path": format!("d/{i}"),
+                    "start": start,
+                    "end": end,
+                }));
+            }
+        }
+        serde_json::to_string(&out).map_err(err)
+    }
+
     /// Page geometry of the final section as JSON (pt):
     /// `{"w":..,"h":..,"landscape":bool,"mt":..,"mr":..,"mb":..,"ml":..}`.
     /// Missing values report Word's Letter defaults. Read-only.

@@ -18,6 +18,7 @@ import { copySelection, cutSelection, clearImageSel, selectImage, deleteSelected
 import { openFind, openReplace, closeFind, isFindOpen, findq, replq } from "./find.js";
 import { imeEl, finalizeComposition } from "./ime.js";
 import { openLinkBar, linkUrlAt } from "./link.js";
+import { commentAtCaret } from "./comments.js";
 
 function svgPoint(svg: SVGSVGElement, clientX: number, clientY: number) {
   return new DOMPoint(clientX, clientY).matrixTransform(svg.getScreenCTM()!.inverse());
@@ -140,7 +141,9 @@ export function clickAt(page: number, x: number, y: number) {
 
   S.caret = { path: h.path, off: (h.start ?? 0) + k };
   drawCaret();
-  report();
+  const comment = commentAtCaret();
+  if (comment) report(comment);
+  else report();
   imeEl.focus({ preventScroll: true });
 }
 

@@ -5,6 +5,7 @@ import { S } from "./state.js";
 import type { HitRun } from "./state.js";
 import { drawCaret, drawSelection, drawPreedit } from "./view.js";
 import { drawFindHl, refindAfterApply } from "./find.js";
+import { drawCommentHl } from "./comments.js";
 import { updateToolbarState } from "./format.js";
 
 /** The JSON payload every wasm mutation/render returns. */
@@ -57,7 +58,7 @@ function drainDirty() {
     if (performance.now() - t0 > 8) break; // keep the tab responsive
   }
   if (dirtyPages.size) scheduleDrain();
-  else { applyZoom(); drawFindHl(); report(); }
+  else { applyZoom(); drawFindHl(); drawCommentHl(); report(); }
 }
 
 function scheduleDrain() {
@@ -151,6 +152,7 @@ export function apply(json: string, ms: number) {
   drawSelection();
   drawPreedit();
   refindAfterApply();
+  drawCommentHl();
   report();
 }
 
