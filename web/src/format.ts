@@ -318,6 +318,67 @@ export function splitCell() {
   });
 }
 
+// Background shading for the cell-block selection, or the caret's cell.
+export function applyCellShading(hex: string) {
+  const cs = cellSel();
+  let paths: string[] = [];
+  if (cs) {
+    for (let r = cs.r0; r <= cs.r1; r++)
+      for (let c = cs.c0; c <= cs.c1; c++) paths.push(`d/${cs.table}.${r}.${c}.0`);
+    clearCellSel();
+  } else if (S.caret && /^d\/\d+\.\d+\.\d+\.\d+$/.test(S.caret.path)) {
+    paths = [S.caret.path];
+  } else {
+    report("셀 배경: 셀 블록을 선택하거나 셀에 캐럿을 두세요");
+    return;
+  }
+  const keep = S.caret && { ...S.caret };
+  edit(() => {
+    const json = S.conv.set_cell_shading(JSON.stringify(paths), hex);
+    S.caret = keep;
+    return json;
+  });
+}
+
+// ---- table borders (inline bar) --------------------------------------------
+
+// The caret/cell-block table's path ("d/T"), or null.
+function currentTablePath(): string | null {
+  const cs = cellSel();
+  if (cs) return `d/${cs.table}`;
+  const p = S.caret ? S.caret.path : selectionRanges()?.[0]?.path ?? null;
+  const m = p && p.match(/^d\/(\d+)\.\d+\.\d+\.\d+$/);
+  return m ? `d/${m[1]}` : null;
+}
+
+export function openBorderBar() {
+  if (!currentTablePath()) {
+    report("표 테두리: 표 안에 캐럿을 두세요");
+    return;
+  }
+  document.getElementById("borderbar")!.hidden = false;
+}
+
+export function closeBorderBar() {
+  document.getElementById("borderbar")!.hidden = true;
+}
+
+export function applyTableBorders() {
+  const path = currentTablePath();
+  if (!path) { report("표 테두리: 표 안에 캐럿을 두세요"); return; }
+  const style = (document.getElementById("borderstyle") as HTMLSelectElement).value;
+  const width = +(document.getElementById("borderwidth") as HTMLSelectElement).value;
+  const color = (document.getElementById("bordercolor") as HTMLInputElement).value
+    .replace("#", "").toUpperCase();
+  const keep = S.caret && { ...S.caret };
+  edit(() => {
+    const json = S.conv.set_table_borders(path, style, width, color);
+    S.caret = keep;
+    return json;
+  });
+  closeBorderBar();
+}
+
 // Word-style Tab in a table: move to the next/previous cell selecting its
 // content; Tab at the last cell appends a row (via the structure op).
 function landInCell(t: number, r: number, c: number): boolean {
@@ -378,6 +439,17 @@ export function wireFormat() {
   });
   document.getElementById("mergebtn")!.onclick = mergeCells;
   document.getElementById("splitbtn")!.onclick = splitCell;
+
+  const shadeEl = document.getElementById("cellshade") as HTMLInputElement;
+  shadeEl.addEventListener("change", () => {
+    applyCellShading(shadeEl.value.replace("#", "").toUpperCase());
+  });
+  // A mousedown on the picker must not clear the cell-block selection it
+  // is about to consume (the global mousedown handler clears blocks).
+  shadeEl.addEventListener("mousedown", (e) => e.stopPropagation());
+
+  document.getElementById("borderapply")!.onclick = applyTableBorders;
+  document.getElementById("borderclose")!.onclick = closeBorderBar;
 
   const rowsEl = document.getElementById("tablerows") as HTMLInputElement;
   const colsEl = document.getElementById("tablecols") as HTMLInputElement;

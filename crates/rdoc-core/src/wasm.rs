@@ -961,6 +961,102 @@ impl SvgConverter {
         )
     }
 
+    /// Set all borders (outer edges + inner gridlines) of the table at a
+    /// body index. Style: none|single|thick|double|dotted|dashed|dotdash|
+    /// wave; width in pt (0.25..6); color as 6-digit hex. One history
+    /// entry.
+    pub fn set_table_borders(
+        &mut self,
+        path: &str,
+        style: &str,
+        width_pt: f64,
+        color: &str,
+    ) -> Result<String, JsValue> {
+        let style = match style {
+            "none" => rdocx::BorderStyle::None,
+            "single" => rdocx::BorderStyle::Single,
+            "thick" => rdocx::BorderStyle::Thick,
+            "double" => rdocx::BorderStyle::Double,
+            "dotted" => rdocx::BorderStyle::Dotted,
+            "dashed" => rdocx::BorderStyle::Dashed,
+            "dotdash" => rdocx::BorderStyle::DotDash,
+            "wave" => rdocx::BorderStyle::Wave,
+            _ => return Err(err("unknown border style")),
+        };
+        if !(0.25..=6.0).contains(&width_pt) {
+            return Err(err("border width out of range"));
+        }
+        if color.len() != 6 || !color.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(err("color must be 6-digit hex"));
+        }
+        let Some(crate::EditPath::Doc(ch)) = parse_edit_path(path) else {
+            return Err(err("not a body table"));
+        };
+        let body_index = ch[0];
+        let size_eighths = (width_pt * 8.0).round() as u32;
+        let color = color.to_string();
+        self.mutate(
+            move |d| {
+                let Some(ordinal) = table_ordinal(d, body_index) else {
+                    return false;
+                };
+                match d.table_mut(ordinal) {
+                    Some(mut t) => {
+                        t.set_borders(style, size_eighths, &color);
+                        true
+                    }
+                    None => false,
+                }
+            },
+            "table borders",
+        )
+    }
+
+    /// Set the background shading of the cells the given cell paragraph
+    /// paths ("d/T.R.C.P") belong to, as one history entry. Color is a
+    /// 6-digit hex fill.
+    pub fn set_cell_shading(&mut self, json: &str, color: &str) -> Result<String, JsValue> {
+        if color.len() != 6 || !color.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(err("color must be 6-digit hex"));
+        }
+        let paths: Vec<String> =
+            serde_json::from_str(json).map_err(|_| err("bad paths json"))?;
+        let mut cells: Vec<(usize, usize, usize)> = Vec::new();
+        for path in &paths {
+            let Some(crate::EditPath::Doc(ch)) = parse_edit_path(path) else {
+                return Err(err("not a table cell"));
+            };
+            if ch.len() != 4 {
+                return Err(err("not a top-level table cell"));
+            }
+            cells.push((ch[0], ch[1], ch[2]));
+        }
+        cells.sort();
+        cells.dedup();
+        if cells.is_empty() {
+            return Err(err("no cells"));
+        }
+        let color = color.to_string();
+        self.mutate(
+            move |d| {
+                let mut any = false;
+                for &(bi, r, c) in &cells {
+                    let Some(ordinal) = table_ordinal(d, bi) else {
+                        continue;
+                    };
+                    if let Some(mut t) = d.table_mut(ordinal) {
+                        if let Some(mut cell) = t.cell(r, c) {
+                            cell.set_shading(&color);
+                            any = true;
+                        }
+                    }
+                }
+                any
+            },
+            "cell shading",
+        )
+    }
+
     /// Move the top-level body item at index `from` to index `to` (the
     /// item ends up AT `to` in the new order). One history entry.
     pub fn move_body_item(&mut self, from: usize, to: usize) -> Result<String, JsValue> {

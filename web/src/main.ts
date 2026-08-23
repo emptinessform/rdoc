@@ -265,6 +265,14 @@ window.__t = {
     S.caret = null; S.sel = null;
     apply(j, 0);
   },
+  cellShading: (paths: string[], hex: string) => {
+    const j = S.conv.set_cell_shading(JSON.stringify(paths), hex);
+    apply(j, 0);
+  },
+  tableBorders: (p: string, style: string, widthPt: number, hex: string) => {
+    const j = S.conv.set_table_borders(p, style, widthPt, hex);
+    apply(j, 0);
+  },
   cellSel: () => cellSel(),
   selectCells: (page: number, table: number, r0: number, c0: number, r1: number, c1: number) =>
     setCellSel({ page, table, r0, c0, r1, c1 }),

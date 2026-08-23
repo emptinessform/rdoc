@@ -46,8 +46,8 @@
   #toolbar input[type=color] { width: 26px; height: 24px; padding: 1px;
     border: 1px solid #4a4f57; border-radius: 6px; background: #3a3e45; }
   #toolbar label { font-size: 12px; color: #bbb; display: flex; align-items: center; gap: 5px; }
-  #findbar, #linkbar, #commentbar, #tablebar { display: flex; align-items: center; gap: 4px; }
-  #findbar[hidden], #linkbar[hidden], #commentbar[hidden], #tablebar[hidden] { display: none; }
+  #findbar, #linkbar, #commentbar, #tablebar, #borderbar { display: flex; align-items: center; gap: 4px; }
+  #findbar[hidden], #linkbar[hidden], #commentbar[hidden], #tablebar[hidden], #borderbar[hidden] { display: none; }
   #findbar input, #linkbar input, #commentbar input, #tablebar input { background: #23262b;
     color: #eee; border: 1px solid #4a4f57; border-radius: 6px; font: inherit;
     font-size: 13px; padding: 3px 8px; }
@@ -177,6 +177,8 @@
         <button data-cmd="spacing1">줄 간격 1.0</button>
         <button data-cmd="spacing15">줄 간격 1.5</button>
         <button data-cmd="spacing2">줄 간격 2.0</button>
+        <hr>
+        <button data-cmd="tableBorders">표 테두리…</button>
       </div>
     </div>
     <div class="menu">
@@ -243,6 +245,7 @@
       <button data-op="C" title="열 삭제">열−</button>
       <button id="mergebtn" title="셀 병합 (한 행의 인접 셀 선택)">병합</button>
       <button id="splitbtn" title="셀 분할 (병합된 셀)">분할</button>
+      <input type="color" id="cellshade" value="#FFF2CC" title="셀 배경색 (셀 블록 또는 캐럿 셀)">
     </span>
     <span class="sep"></span>
     <button id="imgbtn" title="이미지 삽입 (캐럿 위치)">이미지</button>
@@ -269,6 +272,30 @@
       <label>열 <input type="number" id="tablecols" min="1" max="20" value="3" style="width:3em"></label>
       <button id="tableapply" title="표 삽입 (Enter)">표 삽입</button>
       <button id="tableclose" title="닫기 (Esc)">✕</button>
+    </span>
+    <span id="borderbar" hidden>
+      <span class="sep"></span>
+      <select id="borderstyle">
+        <option value="single">실선</option>
+        <option value="thick">굵은 실선</option>
+        <option value="double">이중선</option>
+        <option value="dotted">점선</option>
+        <option value="dashed">파선</option>
+        <option value="dotdash">일점쇄선</option>
+        <option value="wave">물결선</option>
+        <option value="none">없음</option>
+      </select>
+      <select id="borderwidth">
+        <option value="0.25">0.25pt</option>
+        <option value="0.5" selected>0.5pt</option>
+        <option value="1">1pt</option>
+        <option value="1.5">1.5pt</option>
+        <option value="2.25">2.25pt</option>
+        <option value="3">3pt</option>
+      </select>
+      <input type="color" id="bordercolor" value="#808080" title="테두리 색">
+      <button id="borderapply" title="표 전체에 적용 (Enter)">적용</button>
+      <button id="borderclose" title="닫기 (Esc)">✕</button>
     </span>
     <span id="commentbar" hidden>
       <span class="sep"></span>
