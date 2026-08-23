@@ -35,6 +35,8 @@ pub struct SvgConverter {
     composing: bool,
     /// Id created by the most recent successful `insert_footnote`.
     last_note_id: Option<i32>,
+    /// Render the Tracked revision projection instead of the final view.
+    tracked_view: bool,
     cache: RenderCache,
 }
 
@@ -61,6 +63,7 @@ impl SvgConverter {
             redo: Vec::new(),
             composing: false,
             last_note_id: None,
+            tracked_view: false,
             cache: RenderCache::default(),
         }
     }
@@ -110,8 +113,15 @@ impl SvgConverter {
             .iter()
             .map(|(requested, target)| (requested.as_str(), target.as_str()))
             .collect();
+        let options = rdocx::RenderOptions {
+            revision_view: if self.tracked_view {
+                rdocx::RevisionView::Tracked
+            } else {
+                rdocx::RevisionView::Accepted
+            },
+        };
         let layout = doc
-            .layout_with_fonts_aliases_and_bundled_fallback(&fonts, &aliases)
+            .layout_with_fonts_aliases_options_and_bundled_fallback(&fonts, &aliases, options)
             .map_err(err)?;
         let delta = render_delta(&layout, &mut self.cache);
         serde_json::to_string(&RenderOut {
@@ -139,8 +149,15 @@ impl SvgConverter {
             .iter()
             .map(|(requested, target)| (requested.as_str(), target.as_str()))
             .collect();
+        let options = rdocx::RenderOptions {
+            revision_view: if self.tracked_view {
+                rdocx::RevisionView::Tracked
+            } else {
+                rdocx::RevisionView::Accepted
+            },
+        };
         let layout = doc
-            .layout_with_fonts_aliases_and_bundled_fallback(&fonts, &aliases)
+            .layout_with_fonts_aliases_options_and_bundled_fallback(&fonts, &aliases, options)
             .map_err(err)?;
         crate::render_page_svg(&layout, index).ok_or_else(|| err("page out of range"))
     }
@@ -503,6 +520,22 @@ impl SvgConverter {
             },
             "table op",
         )
+    }
+
+    /// Switch between the final (Accepted) view and the Tracked view that
+    /// renders both sides of modeled revisions with decorations. A view
+    /// switch is not an edit: no history entry; returns a full render
+    /// delta for the newly selected projection.
+    pub fn set_revision_view(&mut self, tracked: bool) -> Result<String, JsValue> {
+        self.tracked_view = tracked;
+        self.cache.clear();
+        self.render()
+    }
+
+    /// Whether the document carries any tracked revisions. Read-only.
+    pub fn has_revisions(&mut self) -> Result<bool, JsValue> {
+        let doc = self.doc.as_ref().ok_or_else(|| err("no document loaded"))?;
+        Ok(!doc.revisions().is_empty())
     }
 
     /// Page geometry of the final section as JSON (pt):

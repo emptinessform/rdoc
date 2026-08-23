@@ -3,9 +3,22 @@
 // their own ids (#demo, #save, #thumbtoggle) keep their original handlers
 // and the menu only closes around them.
 
-import { report } from "./render.js";
+import { apply, report } from "./render.js";
 import { S } from "./state.js";
 import { edit } from "./edit.js";
+import { finalizeComposition } from "./ime.js";
+
+// View switch, not an edit: no history entry; the wasm side re-renders
+// the newly selected projection.
+export function toggleTrackedView(on?: boolean) {
+  finalizeComposition();
+  S.trackedView = on ?? !S.trackedView;
+  S.caret = null;
+  S.sel = null;
+  const json = S.conv.set_revision_view(S.trackedView);
+  apply(json, 0);
+  report(S.trackedView ? "변경 내용 표시 켬 (읽기 전용)" : "변경 내용 표시 끔");
+}
 import {
   doUndo, doRedo, selectAll, insertFootnote, insertEndnote, deleteNote,
   toggleFmt,
@@ -38,6 +51,7 @@ const COMMANDS: Record<string, () => void> = {
   marginsNormal: () => pageOp(() => S.conv.set_margins_pt(72, 72, 72, 72)),
   marginsNarrow: () => pageOp(() => S.conv.set_margins_pt(36, 36, 36, 36)),
   marginsWide: () => pageOp(() => S.conv.set_margins_pt(72, 144, 72, 144)),
+  trackChanges: () => toggleTrackedView(),
   insertImage: () => (document.getElementById("imgfile") as HTMLInputElement).click(),
   undo: doUndo,
   redo: doRedo,

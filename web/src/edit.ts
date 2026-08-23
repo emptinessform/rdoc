@@ -68,6 +68,12 @@ export function selectionRanges(): ParaRange[] | null {
 }
 
 export function edit(fn: () => string) {
+  // Single choke point for every mutation (toolbar, menus, keyboard,
+  // test hooks): the tracked-changes view is read-only.
+  if (S.trackedView) {
+    report("변경 내용 표시 중 — 편집하려면 보기에서 표시를 끄세요");
+    return;
+  }
   const t = performance.now();
   try {
     const json = fn();

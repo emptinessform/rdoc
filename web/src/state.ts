@@ -39,6 +39,9 @@ export interface State {
   selAnchor: Pos | null;   // keyboard selection: fixed anchor
   selFocus: Pos | null;    //                     moving focus
   comp: Comp | null;       // in-flight IME composition
+  /** Tracked-changes view is on: rendering shows both sides of
+   *  revisions and the editor is read-only (edit() refuses). */
+  trackedView: boolean;
 }
 
 export const S: State = {
@@ -54,6 +57,7 @@ export const S: State = {
   selAnchor: null,
   selFocus: null,
   comp: null,
+  trackedView: false,
 };
 
 export const chars = (s: string) => [...s];
