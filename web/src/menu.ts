@@ -44,8 +44,36 @@ function pageOp(fn: () => string) {
   });
 }
 
+// Sample gallery: the deployed test fixtures double as feature demos.
+async function loadSample(url: string, after?: () => void) {
+  try {
+    // Opening another document must not inherit the read-only Tracked
+    // view from the previous one.
+    if (S.trackedView) toggleTrackedView(false);
+    const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+    S.conv.load_docx(bytes);
+    const t0 = performance.now();
+    S.caret = null;
+    S.sel = null;
+    apply(S.conv.render(), performance.now() - t0);
+    after?.();
+  } catch (e) {
+    report(`샘플 열기 실패: ${e}`);
+  }
+}
+
 const COMMANDS: Record<string, () => void> = {
   openFile: () => (document.getElementById("file") as HTMLInputElement).click(),
+  sampleTrack: () => void loadSample("./trackview-test.docx", () => {
+    if (!S.trackedView) toggleTrackedView(true);
+    report("변경 추적 샘플 — 보기 메뉴에서 표시를 끄면 최종본");
+  }),
+  sampleComment: () => void loadSample("./comment-test.docx", () => {
+    toggleComments(true);
+  }),
+  sampleFonts: () => void loadSample("./fontmap-test.docx", () => {
+    report("한국어 글꼴 매핑 샘플 — 굴림·돋움은 산세리프, 바탕·궁서는 세리프");
+  }),
   docStats: () => {
     try {
       const st = JSON.parse(S.conv.doc_stats());

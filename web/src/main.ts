@@ -109,6 +109,15 @@ async function loadFonts() {
 await loadFonts();
 status("ready — load the demo or open a .docx");
 
+// First visit shows a document, not an empty gray page: load the
+// built-in demo right away (the demo button reloads it fresh, so the
+// test suites' explicit clicks stay deterministic).
+{
+  S.conv.load_demo();
+  const t0 = performance.now();
+  apply(S.conv.render(), performance.now() - t0);
+}
+
 wireRender();
 wireFind();
 wireClipboard();
@@ -122,6 +131,7 @@ wireCommentBar();
 // ---- load ------------------------------------------------------------------
 
 document.getElementById("demo")!.onclick = () => {
+  if (S.trackedView) toggleTrackedView(false);
   S.conv.load_demo();
   const t = performance.now();
   apply(S.conv.render(), performance.now() - t);
@@ -150,6 +160,7 @@ fileEl.onchange = async () => {
   fileEl.value = "";
   if (!f) return;
   try {
+    if (S.trackedView) toggleTrackedView(false);
     S.conv.load_docx(new Uint8Array(await f.arrayBuffer()));
     const t = performance.now();
     apply(S.conv.render(), performance.now() - t);
