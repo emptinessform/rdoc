@@ -4,6 +4,8 @@
 // and the menu only closes around them.
 
 import { report } from "./render.js";
+import { S } from "./state.js";
+import { edit } from "./edit.js";
 import {
   doUndo, doRedo, selectAll, insertFootnote, insertEndnote, deleteNote,
   toggleFmt,
@@ -15,8 +17,27 @@ import {
 } from "./format.js";
 import { openLinkBar, removeLink } from "./link.js";
 
+// Page-setup presets (pt): paper sizes are portrait dimensions — the
+// wasm op preserves the current orientation.
+function pageOp(fn: () => string) {
+  edit(() => {
+    const json = fn();
+    S.caret = null;
+    S.sel = null;
+    return json;
+  });
+}
+
 const COMMANDS: Record<string, () => void> = {
   openFile: () => (document.getElementById("file") as HTMLInputElement).click(),
+  paperA4: () => pageOp(() => S.conv.set_paper(595.3, 841.9)),
+  paperLetter: () => pageOp(() => S.conv.set_paper(612, 792)),
+  paperLegal: () => pageOp(() => S.conv.set_paper(612, 1008)),
+  orientPortrait: () => pageOp(() => S.conv.set_orientation(false)),
+  orientLandscape: () => pageOp(() => S.conv.set_orientation(true)),
+  marginsNormal: () => pageOp(() => S.conv.set_margins_pt(72, 72, 72, 72)),
+  marginsNarrow: () => pageOp(() => S.conv.set_margins_pt(36, 36, 36, 36)),
+  marginsWide: () => pageOp(() => S.conv.set_margins_pt(72, 144, 72, 144)),
   insertImage: () => (document.getElementById("imgfile") as HTMLInputElement).click(),
   undo: doUndo,
   redo: doRedo,

@@ -505,6 +505,96 @@ impl SvgConverter {
         )
     }
 
+    /// Page geometry of the final section as JSON (pt):
+    /// `{"w":..,"h":..,"landscape":bool,"mt":..,"mr":..,"mb":..,"ml":..}`.
+    /// Missing values report Word's Letter defaults. Read-only.
+    pub fn page_info(&mut self) -> Result<String, JsValue> {
+        let doc = self.doc.as_ref().ok_or_else(|| err("no document loaded"))?;
+        let s = doc.section_properties();
+        let w = s
+            .and_then(|s| s.page_width)
+            .map(|t| t.0 as f64 / 20.0)
+            .unwrap_or(612.0);
+        let h = s
+            .and_then(|s| s.page_height)
+            .map(|t| t.0 as f64 / 20.0)
+            .unwrap_or(792.0);
+        let mt = s.and_then(|s| s.margin_top).map(|t| t.0 as f64 / 20.0).unwrap_or(72.0);
+        let mr = s.and_then(|s| s.margin_right).map(|t| t.0 as f64 / 20.0).unwrap_or(72.0);
+        let mb = s.and_then(|s| s.margin_bottom).map(|t| t.0 as f64 / 20.0).unwrap_or(72.0);
+        let ml = s.and_then(|s| s.margin_left).map(|t| t.0 as f64 / 20.0).unwrap_or(72.0);
+        Ok(format!(
+            r#"{{"w":{w},"h":{h},"landscape":{},"mt":{mt},"mr":{mr},"mb":{mb},"ml":{ml}}}"#,
+            w > h,
+        ))
+    }
+
+    /// Set the paper size (portrait dimensions in pt), preserving the
+    /// current orientation. One history entry.
+    pub fn set_paper(&mut self, w_pt: f64, h_pt: f64) -> Result<String, JsValue> {
+        if !(100.0..=4000.0).contains(&w_pt) || !(100.0..=4000.0).contains(&h_pt) {
+            return Err(err("paper size out of range"));
+        }
+        self.mutate(
+            move |d| {
+                let landscape = d
+                    .section_properties()
+                    .and_then(|s| Some((s.page_width?, s.page_height?)))
+                    .map(|(w, h)| w.0 > h.0)
+                    .unwrap_or(false);
+                d.set_page_size(
+                    rdocx::Length::twips((w_pt * 20.0) as i32),
+                    rdocx::Length::twips((h_pt * 20.0) as i32),
+                );
+                if landscape {
+                    d.set_landscape();
+                } else {
+                    d.set_portrait();
+                }
+                true
+            },
+            "paper size",
+        )
+    }
+
+    /// Set the page orientation. One history entry.
+    pub fn set_orientation(&mut self, landscape: bool) -> Result<String, JsValue> {
+        self.mutate(
+            move |d| {
+                if landscape {
+                    d.set_landscape();
+                } else {
+                    d.set_portrait();
+                }
+                true
+            },
+            "orientation",
+        )
+    }
+
+    /// Set all page margins (pt). One history entry.
+    pub fn set_margins_pt(
+        &mut self,
+        top: f64,
+        right: f64,
+        bottom: f64,
+        left: f64,
+    ) -> Result<String, JsValue> {
+        for v in [top, right, bottom, left] {
+            if !(0.0..=500.0).contains(&v) {
+                return Err(err("margin out of range"));
+            }
+        }
+        self.mutate(
+            move |d| {
+                let l = |pt: f64| rdocx::Length::twips((pt * 20.0) as i32);
+                d.set_margins(l(top), l(right), l(bottom), l(left));
+                true
+            },
+            "margins",
+        )
+    }
+
     /// Merge horizontally adjacent cells of one top-level-table row, as
     /// one history entry. Input: JSON array of cell paragraph paths
     /// ("d/T.R.C.P"); they must share the table and row and cover
