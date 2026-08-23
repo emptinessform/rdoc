@@ -13,8 +13,8 @@ import {
   deleteEndnote, deleteNote, doUndo, doRedo,
 } from "./edit.js";
 import {
-  alignSelection, applyFontSize, applyFontColor, styleSelection, tableOp, tabCell,
-  wireFormat,
+  alignSelection, applyFontSize, applyFontColor, applyFontFamily,
+  styleSelection, tableOp, tabCell, wireFormat,
 } from "./format.js";
 import {
   doPaste, insertImageBytes, selectImage, deleteSelectedImage, copySelection,
@@ -234,6 +234,7 @@ window.__t = {
   deleteImage: deleteSelectedImage,
   fontSize: applyFontSize,
   fontColor: applyFontColor,
+  fontFamily: applyFontFamily,
   fmtOn: (ranges: unknown, f: string) => S.conv.ranges_format_on(JSON.stringify(ranges), f),
   thumbs: thumbsState,
   toggleThumbs: () => document.getElementById("thumbtoggle")!.click(),

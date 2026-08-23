@@ -566,6 +566,20 @@ impl SvgConverter {
         )
     }
 
+    /// Set the font family over per-paragraph ranges, as one history entry.
+    pub fn set_family_ranges(&mut self, json: &str, family: &str) -> Result<String, JsValue> {
+        let ranges = Self::parse_ranges(json)?;
+        let family = family.to_owned();
+        self.mutate(
+            move |d| {
+                ranges
+                    .iter()
+                    .all(|(at, s, e)| crate::set_family_at(d, at, *s, *e, &family))
+            },
+            "font family",
+        )
+    }
+
     /// Set the text color (6-digit hex, no '#') over per-paragraph ranges,
     /// as one history entry.
     pub fn set_color_ranges(&mut self, json: &str, hex: &str) -> Result<String, JsValue> {

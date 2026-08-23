@@ -2173,6 +2173,44 @@ pub fn set_color_at(doc: &mut Document, at: &EditPath, start: usize, end: usize,
     with_paragraph_at(doc, at, |p| set_color_in(p, start, end, hex)).unwrap_or(false)
 }
 
+/// Set the font family over [start, end) of one paragraph, splitting
+/// runs at the range boundaries like set_size_in. Sets ascii/hAnsi/
+/// eastAsia/cs together (Run::set_font), matching how Word applies a
+/// family from the font dropdown.
+fn set_family_in(p: &mut rdocx::Paragraph<'_>, start: usize, end: usize, family: &str) -> bool {
+    if end <= start || family.trim().is_empty() {
+        return false;
+    }
+    let (j2, o2) = locate(p, end);
+    p.split_run(j2, o2);
+    let (j1, o1) = locate(p, start);
+    p.split_run(j1, o1);
+    let mut acc = 0usize;
+    let mut any = false;
+    for j in 0..p.run_count() {
+        let len = p.run(j).map(|r| r.text().chars().count()).unwrap_or(0);
+        if len > 0 && acc >= start && acc + len <= end {
+            any = true;
+            if let Some(mut r) = p.run_mut(j) {
+                r.set_font(family);
+            }
+        }
+        acc += len;
+    }
+    any
+}
+
+/// Set the font family over [start, end) at any editable location.
+pub fn set_family_at(
+    doc: &mut Document,
+    at: &EditPath,
+    start: usize,
+    end: usize,
+    family: &str,
+) -> bool {
+    with_paragraph_at(doc, at, |p| set_family_in(p, start, end, family)).unwrap_or(false)
+}
+
 fn toggle_in(p: &mut rdocx::Paragraph<'_>, start: usize, end: usize, fmt: char) -> bool {
     if end <= start {
         return false;

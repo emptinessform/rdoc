@@ -46,5 +46,26 @@ window.__benchResult = "pending";
   res.info.total = s.total;
   check("all runs provenance-mapped", s.mapped === s.total && s.total > 0);
 
+  // Applying a family over a selection re-shapes with that font: turn the
+  // 굴림(sans) paragraph into 바탕 — its total width must become the
+  // serif paragraph's width — and one undo restores the sans width.
+  if (res.ok) {
+    const selAll = (path) => {
+      const segs = t.hits(1).filter((h) => h.path === path && h.start !== null)
+        .sort((x, y) => x.start - y.start);
+      const f = segs[0], l = segs[segs.length - 1];
+      return t.select(1, f.x + 0.1, f.y - 2, l.x + l.adv.reduce((x, y) => x + y, 0) - 0.1, l.y - 2);
+    };
+    selAll("d/1");
+    t.fontFamily("바탕");
+    await new Promise((r) => setTimeout(r, 400));
+    const applied = totalWidth("d/1");
+    res.info.familyApplied = applied;
+    check("family change reshapes to serif", Math.abs(applied - w.batang) < 1e-6);
+    t.undo();
+    await new Promise((r) => setTimeout(r, 400));
+    check("family undo restores sans", Math.abs(totalWidth("d/1") - w.gulim) < 1e-6);
+  }
+
   window.__benchResult = JSON.stringify(res);
 })();

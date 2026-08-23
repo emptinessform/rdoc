@@ -44,6 +44,19 @@ export function applyFontSize(pt: number) {
   });
 }
 
+// Font family over the selection. A family change reflows lines, so the
+// selection collapses to a caret at the range start, like font size.
+export function applyFontFamily(family: string) {
+  const ranges = selectionRanges();
+  if (!ranges || !ranges.length) { report("글꼴: 텍스트를 선택하세요"); return; }
+  edit(() => {
+    const json = S.conv.set_family_ranges(JSON.stringify(ranges), family);
+    S.caret = { path: ranges[0].path, off: ranges[0].start };
+    S.sel = null;
+    return json;
+  });
+}
+
 // Text color over the selection. Color does not reflow, but splitting
 // runs renumbers the hit segments, so the old {page,idx,k} refs go
 // stale — re-derive the selection from document offsets instead.
@@ -153,6 +166,13 @@ export function wireFormat() {
   const fontcolorEl = document.getElementById("fontcolor") as HTMLInputElement;
   fontcolorEl.addEventListener("change", () => {
     applyFontColor(fontcolorEl.value.replace("#", "").toUpperCase());
+  });
+
+  const fontfamilyEl = document.getElementById("fontfamily") as HTMLSelectElement;
+  fontfamilyEl.addEventListener("change", () => {
+    if (fontfamilyEl.value) applyFontFamily(fontfamilyEl.value);
+    fontfamilyEl.selectedIndex = 0;
+    fontfamilyEl.blur();
   });
 
   const fontsizeEl = document.getElementById("fontsize") as HTMLInputElement;
