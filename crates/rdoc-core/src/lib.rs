@@ -2049,6 +2049,55 @@ fn format_all_on_in(p: &rdocx::Paragraph<'_>, start: usize, end: usize, fmt: cha
     any.then_some(true)
 }
 
+/// Formatting of the run a caret sits in, for toolbar state display.
+///
+/// Word's rule: a caret inherits from the character to its LEFT, so the
+/// covering run is the one ending at or after `off` with `off > start`;
+/// at offset 0 the first run wins. Values are the run's direct
+/// properties plus the b/i/u effective checks used by toggling.
+#[derive(serde::Serialize)]
+pub struct CaretFormat {
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub size: Option<f64>,
+    pub family: Option<String>,
+    pub color: Option<String>,
+}
+
+fn caret_format_in(p: &rdocx::Paragraph<'_>, off: usize) -> Option<CaretFormat> {
+    let mut acc = 0usize;
+    let mut chosen: Option<usize> = None;
+    for j in 0..p.run_count() {
+        let len = p.run(j)?.text().chars().count();
+        if len == 0 {
+            continue;
+        }
+        if chosen.is_none() {
+            chosen = Some(j); // offset 0 (or degenerate off): first real run
+        }
+        if off > acc && off <= acc + len {
+            chosen = Some(j);
+            break;
+        }
+        acc += len;
+    }
+    let r = p.run(chosen?)?;
+    Some(CaretFormat {
+        bold: r.is_bold(),
+        italic: r.is_italic(),
+        underline: r.is_underline(),
+        size: r.size(),
+        family: r.font_name().map(str::to_owned),
+        color: r.color().map(str::to_owned),
+    })
+}
+
+/// Read the caret formatting snapshot at any editable location.
+pub fn caret_format_at(doc: &mut Document, at: &EditPath, off: usize) -> Option<CaretFormat> {
+    with_paragraph_at(doc, at, |p| caret_format_in(p, off)).flatten()
+}
+
 /// Read `format_all_on_in` at any editable location.
 pub fn format_all_on_at(
     doc: &mut Document,

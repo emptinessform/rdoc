@@ -5,6 +5,7 @@ import { S } from "./state.js";
 import type { HitRun } from "./state.js";
 import { drawCaret, drawSelection, drawPreedit } from "./view.js";
 import { drawFindHl, refindAfterApply } from "./find.js";
+import { updateToolbarState } from "./format.js";
 
 /** The JSON payload every wasm mutation/render returns. */
 interface RenderDelta {
@@ -156,6 +157,7 @@ export function apply(json: string, ms: number) {
 export function report(extra?: string) {
   const c = S.caret ? `caret: ${S.caret.path}, offset ${S.caret.off}` : (S.sel ? "selection" : "no caret");
   status(`${c} | last op ${S.lastMs.toFixed(1)} ms (${S.lastDelta})${extra ? " | " + extra : ""}`);
+  updateToolbarState();
 }
 
 export function wireRender() {

@@ -566,6 +566,18 @@ impl SvgConverter {
         )
     }
 
+    /// Formatting at a caret position as JSON
+    /// (`{bold, italic, underline, size, family, color}`), read from the
+    /// run left of the offset — for toolbar state display. Read-only.
+    pub fn caret_format(&mut self, path: &str, off: usize) -> Result<String, JsValue> {
+        let Some(at) = parse_edit_path(path) else {
+            return Err(err("not an editable location"));
+        };
+        let doc = self.doc.as_mut().ok_or_else(|| err("no document loaded"))?;
+        let fmt = crate::caret_format_at(doc, &at, off).ok_or_else(|| err("no run at caret"))?;
+        serde_json::to_string(&fmt).map_err(err)
+    }
+
     /// Set the font family over per-paragraph ranges, as one history entry.
     pub fn set_family_ranges(&mut self, json: &str, family: &str) -> Result<String, JsValue> {
         let ranges = Self::parse_ranges(json)?;

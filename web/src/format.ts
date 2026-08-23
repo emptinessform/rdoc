@@ -93,6 +93,60 @@ export function styleSelection(styleId: string) {
   });
 }
 
+/// Direct run formatting reported by wasm caret_format.
+interface CaretFormat {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  size: number | null;
+  family: string | null;
+  color: string | null;
+}
+
+// Reflect the caret/selection formatting in the toolbar: B/I/U pressed
+// state, and the font family/size fields. Called from report(), which
+// every caret/selection/edit path already goes through.
+export function updateToolbarState() {
+  let fmt: CaretFormat | null = null;
+  let biu: { b: boolean; i: boolean; u: boolean } | null = null;
+  try {
+    if (S.caret) {
+      fmt = JSON.parse(S.conv.caret_format(S.caret.path, S.caret.off)) as CaretFormat;
+      biu = { b: fmt.bold, i: fmt.italic, u: fmt.underline };
+    } else {
+      const ranges = selectionRanges();
+      if (ranges && ranges.length) {
+        const json = JSON.stringify(ranges);
+        biu = {
+          b: S.conv.ranges_format_on(json, "b"),
+          i: S.conv.ranges_format_on(json, "i"),
+          u: S.conv.ranges_format_on(json, "u"),
+        };
+        const first = ranges[0];
+        fmt = JSON.parse(
+          S.conv.caret_format(first.path, Math.min(first.start + 1, first.end)),
+        ) as CaretFormat;
+      }
+    }
+  } catch (e) { /* no document, or a non-editable spot: clear the state */ }
+
+  document.querySelectorAll<HTMLButtonElement>("#fmtbtns button").forEach((b) => {
+    const key = b.dataset.fmt as "b" | "i" | "u";
+    b.classList.toggle("on", !!(biu && biu[key]));
+  });
+  const sizeEl = document.getElementById("fontsize") as HTMLInputElement;
+  if (document.activeElement !== sizeEl) {
+    sizeEl.value = fmt && fmt.size != null ? String(fmt.size) : "";
+  }
+  const famEl = document.getElementById("fontfamily") as HTMLSelectElement;
+  if (document.activeElement !== famEl) {
+    const family = fmt && fmt.family;
+    famEl.value = family ?? "";
+    if (famEl.value !== (family ?? "")) famEl.selectedIndex = 0; // not in the list
+    if (!family) famEl.selectedIndex = 0;
+  }
+}
+
 // Table structure ops act on the caret's cell (top-level tables).
 export function tableOp(op: string) {
   if (!S.caret || !/^d\/\d+\.\d+\.\d+\.\d+$/.test(S.caret.path)) {
@@ -171,8 +225,7 @@ export function wireFormat() {
   const fontfamilyEl = document.getElementById("fontfamily") as HTMLSelectElement;
   fontfamilyEl.addEventListener("change", () => {
     if (fontfamilyEl.value) applyFontFamily(fontfamilyEl.value);
-    fontfamilyEl.selectedIndex = 0;
-    fontfamilyEl.blur();
+    fontfamilyEl.blur(); // updateToolbarState now owns the displayed value
   });
 
   const fontsizeEl = document.getElementById("fontsize") as HTMLInputElement;
