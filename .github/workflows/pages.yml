@@ -33,14 +33,18 @@ jobs:
       - name: Build web app (TypeScript)
         run: cd web && npm ci && npm run build
       - name: Assemble site
-        # The demo ships Pretendard (SIL OFL 1.1) as its Korean font; the
-        # font is downloaded here, never committed to the repo.
+        # The demo ships the open-font set (all SIL OFL 1.1): Pretendard
+        # (sans) and NanumMyeongjo (serif), mapped to the common Korean
+        # family names at runtime. Fonts are downloaded here, never
+        # committed to the repo.
         run: |
           mkdir -p site/fonts
-          cp web/index.html site/
+          cp web/index.html web/fontmap-test.docx site/
           cp -r web/js web/pkg site/
           curl -fsSL -o site/fonts/Pretendard-Regular.otf \
             https://github.com/orioncactus/pretendard/raw/main/packages/pretendard/dist/public/static/Pretendard-Regular.otf
+          curl -fsSL -o site/fonts/NanumMyeongjo-Regular.ttf \
+            https://github.com/google/fonts/raw/main/ofl/nanummyeongjo/NanumMyeongjo-Regular.ttf
       - uses: actions/configure-pages@v5
         with:
           enablement: true

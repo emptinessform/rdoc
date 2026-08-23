@@ -39,13 +39,20 @@ window.__benchResult = "pending";
     res.info.skipMerge = "next sibling is not a paragraph or line-wrapped end";
   }
 
-  // 3. Shift+click extends from the caret to the clicked point
+  // 3. Shift+click extends from the caret to the clicked point. The
+  // target is derived from the paragraph's own hit geometry (center of
+  // its last text segment) so the test does not depend on which Korean
+  // font shaped the demo (metrics differ between malgun and the open set).
   t.clickAt(1, 150, 200);
   const svg = document.querySelector("#pages svg");
   const r = svg.getBoundingClientRect();
   const vb = svg.viewBox.baseVal;
-  const cx = r.left + (260 / vb.width) * r.width;
-  const cy = r.top + (200 / vb.height) * r.height;
+  const segs = t.hits(1).filter(h => h.path === p && h.start !== null)
+    .sort((a, b) => a.start - b.start);
+  const hEnd = segs[segs.length - 1];
+  const targetX = hEnd.x + hEnd.adv.reduce((a, b) => a + b, 0) / 2;
+  const cx = r.left + (targetX / vb.width) * r.width;
+  const cy = r.top + ((hEnd.y - 2) / vb.height) * r.height;
   svg.dispatchEvent(new MouseEvent("mousedown", { clientX: cx, clientY: cy, bubbles: true, shiftKey: true }));
   window.dispatchEvent(new MouseEvent("mouseup", { clientX: cx, clientY: cy, bubbles: true, shiftKey: true }));
   const shiftSel = t.selText();

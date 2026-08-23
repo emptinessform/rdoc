@@ -37,27 +37,63 @@ declare global {
 await init();
 S.conv = new SvgConverter();
 
-// Korean font, first one that loads wins: a locally provided malgun.ttf
-// (dev convenience — MS license, never in the repo), else the free demo
-// font the Pages deploy ships (Pretendard, SIL OFL), registered under
-// the common family names so typical Korean documents resolve to it.
-// If neither loads, rdocx's bundled fallback fonts take over.
-async function addFirstFont(sources: [string[], string][]) {
-  for (const [families, url] of sources) {
+// Open-font set (rhwp-style): free fonts (SIL OFL) serve the common
+// Korean family names, so a document that asks for 굴림/바탕/궁서…
+// shapes with a real font of the same class even where no local font
+// exists (mobile, the public demo). Each font file is registered ONCE;
+// the many document-facing names are byte-free aliases (add_font_alias),
+// so relayouts never copy duplicated font data. A locally provided
+// malgun.ttf (dev machine — MS license, never in the repo) keeps
+// priority for its own names; unmatched names fall through to rdocx's
+// bundled fallback fonts.
+const SANS_ALIASES = [
+  "맑은 고딕 Semilight",
+  "굴림", "Gulim", "굴림체", "GulimChe", "돋움", "Dotum", "돋움체", "DotumChe",
+  "새굴림", "New Gulim", "나눔고딕", "NanumGothic", "나눔바른고딕",
+  "함초롬돋움", "HCR Dotum", "Apple SD Gothic Neo",
+  "Noto Sans KR", "Noto Sans CJK KR", "본고딕",
+];
+const SERIF_ALIASES = [
+  "나눔명조", "바탕", "Batang", "바탕체", "BatangChe",
+  "명조", "신명조", "HY신명조", "휴먼명조", "함초롬바탕", "HCR Batang",
+  "은바탕", "UnBatang", "Noto Serif KR", "Noto Serif CJK KR", "본명조",
+  // Script faces have no open equivalent; a serif is the closest class.
+  "궁서", "Gungsuh", "궁서체", "GungsuhChe",
+];
+const FONT_SOURCES = [
+  { url: "./malgun.ttf", family: "Malgun Gothic" },
+  { url: "./fonts/Pretendard-Regular.otf", family: "Pretendard" },
+  { url: "./fonts/NanumMyeongjo-Regular.ttf", family: "NanumMyeongjo" },
+];
+async function loadFonts() {
+  const fetched = await Promise.all(FONT_SOURCES.map(async (src) => {
     try {
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      for (const f of families) S.conv.add_font(f, bytes);
-      return url;
-    } catch (e) { /* try the next source */ }
+      const res = await fetch(src.url);
+      if (!res.ok) return null;
+      return { family: src.family, bytes: new Uint8Array(await res.arrayBuffer()) };
+    } catch (e) { return null; }
+  }));
+  const loaded = new Set<string>();
+  for (const f of fetched) {
+    if (!f) continue;
+    S.conv.add_font(f.family, f.bytes);
+    loaded.add(f.family.toLowerCase());
   }
-  return null;
+  const taken = new Set<string>(loaded);
+  const alias = (name: string, target: string | null) => {
+    if (!target || taken.has(name.toLowerCase())) return;
+    S.conv.add_font_alias(name, target);
+    taken.add(name.toLowerCase());
+  };
+  const sans = loaded.has("pretendard") ? "Pretendard" : null;
+  const serif = loaded.has("nanummyeongjo") ? "NanumMyeongjo" : sans;
+  const malgun = loaded.has("malgun gothic") ? "Malgun Gothic" : sans;
+  alias("Malgun Gothic", malgun); // no-op when the real file loaded
+  alias("맑은 고딕", malgun);
+  for (const name of SANS_ALIASES) alias(name, sans);
+  for (const name of SERIF_ALIASES) alias(name, serif);
 }
-await addFirstFont([
-  [["Malgun Gothic"], "./malgun.ttf"],
-  [["Pretendard", "Malgun Gothic", "맑은 고딕"], "./fonts/Pretendard-Regular.otf"],
-]);
+await loadFonts();
 status("ready — load the demo or open a .docx");
 
 wireRender();

@@ -1,9 +1,9 @@
 // Formatting and table structure: alignment, font size/color, paragraph
 // styles, row/column ops, and Word-style Tab cell navigation.
 
-import { S, chars } from "./state.js";
+import { S, chars, orderSel } from "./state.js";
 import { report } from "./render.js";
-import { drawCaret, drawSelection, selectParaOffsets } from "./view.js";
+import { drawCaret, drawSelection, selectParaOffsets, refForOffset } from "./view.js";
 import { edit, selRange, selectionRanges } from "./edit.js";
 
 // Paragraph alignment for the caret paragraph or every paragraph the
@@ -44,14 +44,21 @@ export function applyFontSize(pt: number) {
   });
 }
 
-// Text color over the selection. Color does not reflow, so the
-// selection refs stay valid and are restored after the edit.
+// Text color over the selection. Color does not reflow, but splitting
+// runs renumbers the hit segments, so the old {page,idx,k} refs go
+// stale — re-derive the selection from document offsets instead.
 export function applyFontColor(hex: string) {
   const ranges = selectionRanges();
   if (!ranges || !ranges.length) { report("색: 텍스트를 선택하세요"); return; }
-  const keepSel = S.sel && { a: { ...S.sel.a }, b: { ...S.sel.b } };
+  const first = ranges[0], last = ranges[ranges.length - 1];
   edit(() => S.conv.set_color_ranges(JSON.stringify(ranges), hex));
-  if (keepSel) { S.sel = keepSel; drawSelection(); report(); }
+  const a = refForOffset(first.path, first.start, false);
+  const b = refForOffset(last.path, last.end, true);
+  if (a && b) {
+    S.sel = orderSel(a, b);
+    drawSelection();
+    report();
+  }
 }
 
 // Paragraph style for the caret paragraph / selected paragraphs.

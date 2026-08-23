@@ -64,4 +64,5 @@ sleep 16                       # 무거운 wasm 동기 작업 중 폴링 금지
 | find-test / repl-test | 찾기(Ctrl+F), 바꾸기(Ctrl+H, 모두=1 undo) |
 | paste-test / cut-test | 붙여넣기(멀티라인 1 undo), 잘라내기 |
 | align-test / fontsize-test / biu-test | 정렬·크기·B/I/U (임의 선택) |
+| fonts-test | 오픈 폰트 별칭 매핑 (fontmap-test.docx: 굴림→산세리프, 바탕/궁서→세리프) |
 | bench-undo / bench-web2 | 성능(키 입력·구조 연산, 63페이지) |

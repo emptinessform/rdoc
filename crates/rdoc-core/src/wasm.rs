@@ -19,6 +19,10 @@ const UNDO_CAP: usize = 100;
 #[wasm_bindgen]
 pub struct SvgConverter {
     fonts: Vec<(String, Vec<u8>)>,
+    /// Requested-name -> target-family font aliases (no bytes). Lets one
+    /// open font serve many document-facing Korean family names without
+    /// duplicating its data on every layout.
+    aliases: Vec<(String, String)>,
     doc: Option<rdocx::Document>,
     /// Snapshot-based history: serialized docx bytes. Simple and correct;
     /// a command-pattern history is the optimization path if snapshots get
@@ -52,6 +56,7 @@ impl SvgConverter {
         Self {
             fonts: Vec::new(),
             doc: None,
+            aliases: Vec::new(),
             undo: Vec::new(),
             redo: Vec::new(),
             composing: false,
@@ -63,6 +68,12 @@ impl SvgConverter {
     /// Register a font available to layout, e.g. one fetched by the page.
     pub fn add_font(&mut self, family: &str, data: &[u8]) {
         self.fonts.push((family.to_owned(), data.to_vec()));
+    }
+
+    /// Point a document-facing family name at a registered font's family
+    /// (e.g. "\u{bc14}\u{d0d5}" -> "NanumMyeongjo") without duplicating font bytes.
+    pub fn add_font_alias(&mut self, requested: &str, family: &str) {
+        self.aliases.push((requested.to_owned(), family.to_owned()));
     }
 
     /// Load a .docx as the current document.
@@ -94,7 +105,14 @@ impl SvgConverter {
             .iter()
             .map(|(family, data)| (family.as_str(), data.as_slice()))
             .collect();
-        let layout = doc.layout_with_fonts_and_bundled_fallback(&fonts).map_err(err)?;
+        let aliases: Vec<(&str, &str)> = self
+            .aliases
+            .iter()
+            .map(|(requested, target)| (requested.as_str(), target.as_str()))
+            .collect();
+        let layout = doc
+            .layout_with_fonts_aliases_and_bundled_fallback(&fonts, &aliases)
+            .map_err(err)?;
         let delta = render_delta(&layout, &mut self.cache);
         serde_json::to_string(&RenderOut {
             total: delta.total_pages,
@@ -116,7 +134,14 @@ impl SvgConverter {
             .iter()
             .map(|(family, data)| (family.as_str(), data.as_slice()))
             .collect();
-        let layout = doc.layout_with_fonts_and_bundled_fallback(&fonts).map_err(err)?;
+        let aliases: Vec<(&str, &str)> = self
+            .aliases
+            .iter()
+            .map(|(requested, target)| (requested.as_str(), target.as_str()))
+            .collect();
+        let layout = doc
+            .layout_with_fonts_aliases_and_bundled_fallback(&fonts, &aliases)
+            .map_err(err)?;
         crate::render_page_svg(&layout, index).ok_or_else(|| err("page out of range"))
     }
 
