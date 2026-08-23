@@ -885,6 +885,64 @@ impl SvgConverter {
         )
     }
 
+    /// Scale every grid column of the table at a body index so the total
+    /// width becomes `total_pt` (proportional resize). One history entry.
+    pub fn set_table_total_width(
+        &mut self,
+        path: &str,
+        total_pt: f64,
+    ) -> Result<String, JsValue> {
+        let Some(crate::EditPath::Doc(ch)) = parse_edit_path(path) else {
+            return Err(err("not a body table"));
+        };
+        let body_index = ch[0];
+        self.mutate(
+            move |d| {
+                let Some(ordinal) = table_ordinal(d, body_index) else {
+                    return false;
+                };
+                let widths = match d.table(ordinal) {
+                    Some(t) => t.grid_column_widths(),
+                    None => return false,
+                };
+                let old_total: i64 = widths.iter().map(|&w| w as i64).sum();
+                if old_total <= 0 {
+                    return false;
+                }
+                let ratio = (total_pt * 20.0) / old_total as f64;
+                // Keep every column at least 10pt and the table sane.
+                let min_ratio = widths
+                    .iter()
+                    .map(|&w| 200.0 / w.max(1) as f64)
+                    .fold(0.0f64, f64::max);
+                let ratio = ratio.max(min_ratio).min(2000.0 * 20.0 / old_total as f64);
+                if !(ratio.is_finite() && ratio > 0.0) || (ratio - 1.0).abs() < 1e-4 {
+                    return false;
+                }
+                let mut t = match d.table_mut(ordinal) {
+                    Some(t) => t,
+                    None => return false,
+                };
+                let mut any = false;
+                for (col, &w) in widths.iter().enumerate() {
+                    let new_w = ((w as f64 * ratio).round() as i32).max(200);
+                    any |= t.set_column_width(col, rdocx::Length::twips(new_w));
+                }
+                any
+            },
+            "table width",
+        )
+    }
+
+    /// Move the top-level body item at index `from` to index `to` (the
+    /// item ends up AT `to` in the new order). One history entry.
+    pub fn move_body_item(&mut self, from: usize, to: usize) -> Result<String, JsValue> {
+        if from == to {
+            return Err(err("same position"));
+        }
+        self.mutate(move |d| d.move_content(from, to), "move")
+    }
+
     /// Merge horizontally adjacent cells of one top-level-table row, as
     /// one history entry. Input: JSON array of cell paragraph paths
     /// ("d/T.R.C.P"); they must share the table and row and cover

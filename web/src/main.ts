@@ -36,6 +36,7 @@ import {
 import { applyLink, removeLink, openLinkBar, wireLink } from "./link.js";
 import { wireColResize } from "./colresize.js";
 import { cellSel, setCellSel, clearCellSel } from "./cellsel.js";
+import { wireTableHandles } from "./tablehandle.js";
 
 declare global {
   interface Window {
@@ -131,6 +132,7 @@ wireMenu();
 wireLink();
 wireCommentBar();
 wireColResize();
+wireTableHandles();
 
 // ---- load ------------------------------------------------------------------
 
@@ -253,6 +255,15 @@ window.__t = {
   splitCell,
   insertTable: (rows: number, cols: number) => { openTableBar(); applyInsertTable(rows, cols); },
   tableGrid: (p: string) => JSON.parse(S.conv.table_grid_pt(p)),
+  setTableWidth: (p: string, pt: number) => {
+    const j = S.conv.set_table_total_width(p, pt);
+    apply(j, 0);
+  },
+  moveTable: (from: number, to: number) => {
+    const j = S.conv.move_body_item(from, to);
+    S.caret = null; S.sel = null;
+    apply(j, 0);
+  },
   cellSel: () => cellSel(),
   selectCells: (page: number, table: number, r0: number, c0: number, r1: number, c1: number) =>
     setCellSel({ page, table, r0, c0, r1, c1 }),
