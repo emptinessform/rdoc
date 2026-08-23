@@ -12,7 +12,7 @@ import { findq, replq } from "./find.js";
 // entry via wasm paste_text). A selection is replaced first: single-line
 // pastes ride the atomic replace path; multi-line over a selection is
 // delete + paste (two history entries — a recorded limitation).
-export function doPaste(text) {
+export function doPaste(text: string) {
   if (!text) return;
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
   if (S.sel && lines.length === 1) { replaceSelWith(text); return; }
@@ -23,13 +23,13 @@ export function doPaste(text) {
     const json = S.conv.paste_text(at.path, at.off, text);
     S.caret = lines.length === 1
       ? { path: at.path, off: at.off + chars(text).length }
-      : { path: siblingPath(at.path, lines.length - 1), off: chars(lines[lines.length - 1]).length };
+      : { path: siblingPath(at.path, lines.length - 1)!, off: chars(lines[lines.length - 1]).length };
     S.sel = null;
     return json;
   });
 }
 
-export async function insertImageBytes(bytes, name) {
+export async function insertImageBytes(bytes: Uint8Array, name: string) {
   if (!S.caret || !S.caret.path.startsWith("d/")) {
     report("이미지: 본문에 캐럿을 두세요");
     return;
@@ -50,7 +50,7 @@ export function clearImageSel() {
   S.imageSel = null;
 }
 
-export function selectImage(el) {
+export function selectImage(el: SVGImageElement) {
   clearImageSel();
   finalizeComposition();
   const all = [...document.querySelectorAll("#pages svg image")];
@@ -88,10 +88,10 @@ export function cutSelection() {
 }
 
 export function wireClipboard() {
-  const imgfileEl = document.getElementById("imgfile");
-  document.getElementById("imgbtn").onclick = () => imgfileEl.click();
+  const imgfileEl = document.getElementById("imgfile") as HTMLInputElement;
+  document.getElementById("imgbtn")!.onclick = () => imgfileEl.click();
   imgfileEl.addEventListener("change", async () => {
-    const f = imgfileEl.files[0];
+    const f = imgfileEl.files && imgfileEl.files[0];
     imgfileEl.value = "";
     if (!f) return;
     insertImageBytes(new Uint8Array(await f.arrayBuffer()), f.name);

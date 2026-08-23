@@ -2,6 +2,7 @@
 // and the global keyboard handler.
 
 import { S, chars, getRun, orderSel } from "./state.js";
+import type { Ref } from "./state.js";
 import { pagesEl, report } from "./render.js";
 import {
   findHit, refAt, drawCaret, drawSelection, selectParaOffsets,
@@ -17,13 +18,25 @@ import { copySelection, cutSelection, clearImageSel, selectImage, deleteSelected
 import { openFind, openReplace, closeFind, isFindOpen, findq, replq } from "./find.js";
 import { imeEl, finalizeComposition } from "./ime.js";
 
-function svgPoint(svg, clientX, clientY) {
-  return new DOMPoint(clientX, clientY).matrixTransform(svg.getScreenCTM().inverse());
+function svgPoint(svg: SVGSVGElement, clientX: number, clientY: number) {
+  return new DOMPoint(clientX, clientY).matrixTransform(svg.getScreenCTM()!.inverse());
 }
 
-let mouse = null;
+interface DragState {
+  svg: SVGSVGElement;
+  page: number;
+  start: { x: number; y: number };
+  anchor: Ref | null;
+  dragged: boolean;
+  tripled?: boolean;
+  lastX?: number;
+  lastY?: number;
+  raf?: number | null;
+}
 
-function extendSelection(key) {
+let mouse: DragState | null = null;
+
+function extendSelection(key: string) {
   // Establish anchor and focus from the caret or an existing selection.
   if (!S.selAnchor) {
     if (S.caret) {
@@ -32,26 +45,29 @@ function extendSelection(key) {
     } else if (S.sel) {
       const A = getRun(S.sel.a), B = getRun(S.sel.b);
       if (!A || !B || A.path === null || B.path === null) return;
-      S.selAnchor = { path: A.path, off: A.start + S.sel.a.k };
-      S.selFocus = { path: B.path, off: B.start + S.sel.b.k };
+      S.selAnchor = { path: A.path, off: (A.start ?? 0) + S.sel.a.k };
+      S.selFocus = { path: B.path, off: (B.start ?? 0) + S.sel.b.k };
     } else return;
   }
-  if (key === "ArrowLeft") S.selFocus = { ...S.selFocus, off: Math.max(0, S.selFocus.off - 1) };
+  const anchor = S.selAnchor, focus = S.selFocus;
+  if (!focus) return; // set together with the anchor
+  if (key === "ArrowLeft") S.selFocus = { ...focus, off: Math.max(0, focus.off - 1) };
   else if (key === "ArrowRight") {
-    const len = chars(S.conv.paragraph_text_at(S.selFocus.path) || "").length;
-    S.selFocus = { ...S.selFocus, off: Math.min(len, S.selFocus.off + 1) };
+    const len = chars(S.conv.paragraph_text_at(focus.path) || "").length;
+    S.selFocus = { ...focus, off: Math.min(len, focus.off + 1) };
   } else if (key === "Home" || key === "End") {
-    const off = lineEdgeOff(S.selFocus, key === "End");
-    if (off !== null) S.selFocus = { ...S.selFocus, off };
+    const off = lineEdgeOff(focus, key === "End");
+    if (off !== null) S.selFocus = { ...focus, off };
   } else {
-    const t = lineTarget(S.selFocus, key === "ArrowDown" ? +1 : -1);
+    const t = lineTarget(focus, key === "ArrowDown" ? +1 : -1);
     if (t) S.selFocus = t;
   }
-  if (S.selAnchor.path === S.selFocus.path && S.selAnchor.off === S.selFocus.off) {
+  const moved = S.selFocus!;
+  if (anchor.path === moved.path && anchor.off === moved.off) {
     S.sel = null;
-    S.caret = { ...S.selFocus };
+    S.caret = { ...moved };
   } else {
-    const a = refAt(S.selAnchor), b = refAt(S.selFocus);
+    const a = refAt(anchor), b = refAt(moved);
     if (!a || !b) return;
     S.sel = orderSel(a, b);
     S.caret = null;
@@ -62,21 +78,23 @@ function extendSelection(key) {
 }
 
 // A non-shift arrow collapses an active selection to one of its edges.
-function collapseSelection(toEnd) {
+function collapseSelection(toEnd: boolean) {
+  if (!S.sel) return; // callers guard
   const ref = toEnd ? S.sel.b : S.sel.a;
   const run = getRun(ref);
   S.sel = null;
   S.selAnchor = null;
   S.selFocus = null;
-  if (run && run.path !== null) S.caret = { path: run.path, off: run.start + ref.k };
+  if (run && run.path !== null) S.caret = { path: run.path, off: (run.start ?? 0) + ref.k };
   drawCaret();
   drawSelection();
   report();
 }
 
-function extendDragTo(clientX, clientY) {
+function extendDragTo(clientX: number, clientY: number) {
+  if (!mouse || !mouse.anchor) return;
   const el = document.elementFromPoint(clientX, clientY);
-  const svg = (el && el.closest("svg")) || mouse.svg;
+  const svg = ((el && el.closest("svg")) || mouse.svg) as SVGSVGElement;
   const page = [...pagesEl.children].indexOf(svg) + 1;
   const pt = svgPoint(svg, clientX, clientY);
   const found = findHit(page, pt.x, pt.y);
@@ -90,18 +108,19 @@ function extendDragTo(clientX, clientY) {
 
 const SCROLL_EDGE = 28; // px from the viewport edge that triggers scrolling
 function dragAutoScroll() {
-  if (!mouse || !mouse.dragged) { mouse && (mouse.raf = null); return; }
-  const y = mouse.lastY;
+  const m = mouse;
+  if (!m || !m.dragged) { if (m) m.raf = null; return; }
+  const y = m.lastY!;
   const dy = y < SCROLL_EDGE ? y - SCROLL_EDGE
            : y > innerHeight - SCROLL_EDGE ? y - (innerHeight - SCROLL_EDGE) : 0;
   if (dy) {
     window.scrollBy(0, dy * 0.4);
-    extendDragTo(mouse.lastX, mouse.lastY);
+    extendDragTo(m.lastX!, m.lastY!);
   }
-  mouse.raf = requestAnimationFrame(dragAutoScroll);
+  m.raf = requestAnimationFrame(dragAutoScroll);
 }
 
-export function clickAt(page, x, y) {
+export function clickAt(page: number, x: number, y: number) {
   finalizeComposition();
   clearImageSel();
   S.selAnchor = null;
@@ -118,7 +137,7 @@ export function clickAt(page, x, y) {
     return;
   }
 
-  S.caret = { path: h.path, off: h.start + k };
+  S.caret = { path: h.path, off: (h.start ?? 0) + k };
   drawCaret();
   report();
   imeEl.focus({ preventScroll: true });
@@ -126,15 +145,16 @@ export function clickAt(page, x, y) {
 
 export function wireInput() {
   pagesEl.addEventListener("mousedown", (e) => {
-    const imgEl = e.target.closest && e.target.closest("image");
+    const target = e.target as Element;
+    const imgEl = target.closest && target.closest("image");
     if (imgEl) {
       e.preventDefault();
-      selectImage(imgEl);
+      selectImage(imgEl as SVGImageElement);
       mouse = null;
       return;
     }
     if (S.imageSel) clearImageSel();
-    const svg = e.target.closest("svg");
+    const svg = target.closest("svg") as SVGSVGElement | null;
     if (!svg) return;
     finalizeComposition();
     const page = [...pagesEl.children].indexOf(svg) + 1;
@@ -167,24 +187,24 @@ export function wireInput() {
   });
 
   pagesEl.addEventListener("dblclick", (e) => {
-    const svg = e.target.closest("svg");
+    const svg = (e.target as Element).closest("svg");
     if (!svg) return;
     const page = [...pagesEl.children].indexOf(svg) + 1;
-    const pt = svgPoint(svg, e.clientX, e.clientY);
+    const pt = svgPoint(svg as SVGSVGElement, e.clientX, e.clientY);
     const found = findHit(page, pt.x, pt.y);
     if (!found || found.hit.path === null || found.hit.start === null) return;
     const h = found.hit;
-    const text = S.conv.paragraph_text_at(h.path) || "";
+    const text = S.conv.paragraph_text_at(h.path!) || "";
     const cs = chars(text);
-    let off = Math.min(h.start + found.k, cs.length);
+    let off = Math.min(h.start! + found.k, cs.length);
     if (off >= cs.length) off = cs.length - 1;
     if (off < 0) return;
-    const isWord = (ch) => ch && !/\s/.test(ch);
+    const isWord = (ch: string | undefined) => !!ch && !/\s/.test(ch);
     if (!isWord(cs[off])) return;
     let lo = off, hi = off + 1;
     while (lo > 0 && isWord(cs[lo - 1])) lo--;
     while (hi < cs.length && isWord(cs[hi])) hi++;
-    if (selectParaOffsets(h.path, lo, hi))
+    if (selectParaOffsets(h.path!, lo, hi))
       report(`word: ${JSON.stringify(cs.slice(lo, hi).join(""))}`);
   });
 
@@ -197,7 +217,7 @@ export function wireInput() {
       if (e.shiftKey && (S.caret || S.selAnchor)) {
         const found = findHit(mouse.page, pt.x, pt.y);
         if (found && found.hit.path !== null && found.hit.start !== null) {
-          if (!S.selAnchor) S.selAnchor = { ...S.caret };
+          if (!S.selAnchor) S.selAnchor = { ...S.caret! };
           S.selFocus = { path: found.hit.path, off: found.hit.start + found.k };
           const a = refAt(S.selAnchor), b = refAt(S.selFocus);
           if (a && b) {
@@ -218,7 +238,7 @@ export function wireInput() {
 
   document.addEventListener("keydown", (e) => {
     if (e.isComposing) return;
-    if (e.target === findq || e.target === replq || e.target.id === "fontsize") return;
+    if (e.target === findq || e.target === replq || (e.target as HTMLElement).id === "fontsize") return;
     if (S.imageSel) {
       if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelectedImage(); return; }
       if (e.key === "Escape") { e.preventDefault(); clearImageSel(); report(); return; }
@@ -244,7 +264,7 @@ export function wireInput() {
     }
     if (ctrl || e.altKey) return;
     if (e.key === "Tab") {
-      const pos = S.caret ? S.caret.path : (S.sel && (getRun(S.sel.a) || {}).path) || null;
+      const pos = S.caret ? S.caret.path : S.sel ? getRun(S.sel.a)?.path ?? null : null;
       if (pos && /^d\/\d+\.\d+\.\d+\.\d+$/.test(pos)) {
         e.preventDefault();
         tabCell(pos, e.shiftKey ? -1 : 1);
@@ -275,8 +295,18 @@ export function wireInput() {
     }
     else if (e.key === "ArrowLeft" && S.sel) { e.preventDefault(); collapseSelection(false); }
     else if (e.key === "ArrowRight" && S.sel) { e.preventDefault(); collapseSelection(true); }
-    else if (e.key === "ArrowLeft" && S.caret) { e.preventDefault(); S.caret.off = Math.max(0, S.caret.off - 1); drawCaret(); report(); }
-    else if (e.key === "ArrowRight" && S.caret) { e.preventDefault(); S.caret.off += 1; drawCaret(); report(); }
+    else if (e.key === "ArrowLeft" && S.caret) {
+      e.preventDefault();
+      const c = S.caret;
+      c.off = Math.max(0, c.off - 1);
+      drawCaret(); report();
+    }
+    else if (e.key === "ArrowRight" && S.caret) {
+      e.preventDefault();
+      const c = S.caret;
+      c.off += 1;
+      drawCaret(); report();
+    }
     else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && S.caret) {
       e.preventDefault();
       moveCaretLine(e.key === "ArrowDown" ? +1 : -1);

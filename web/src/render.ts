@@ -2,15 +2,23 @@
 // thumbnail sidebar, and the status line.
 
 import { S } from "./state.js";
+import type { HitRun } from "./state.js";
 import { drawCaret, drawSelection, drawPreedit } from "./view.js";
 import { drawFindHl, refindAfterApply } from "./find.js";
 
-const statusEl = document.getElementById("status");
-export const pagesEl = document.getElementById("pages");
-export const status = (m) => statusEl.textContent = m;
+/** The JSON payload every wasm mutation/render returns. */
+interface RenderDelta {
+  total: number;
+  changed: number[];
+  hits: [number, HitRun[]][];
+}
+
+const statusEl = document.getElementById("status")!;
+export const pagesEl = document.getElementById("pages")!;
+export const status = (m: string) => statusEl.textContent = m;
 
 export function applyZoom() {
-  for (const svg of pagesEl.children) {
+  for (const svg of pagesEl.children as HTMLCollectionOf<SVGSVGElement>) {
     svg.style.width = (svg.viewBox.baseVal.width * S.zoom * (700 / 612)) + "px";
   }
 }
@@ -19,12 +27,12 @@ export function applyZoom() {
 // their SVG now; the rest go into a dirty set drained on idle time.
 // page_svg always renders the *current* document, so a page that turns
 // dirty across several edits is still correct when finally drained.
-const dirtyPages = new Set();
+const dirtyPages = new Set<number>();
 let drainScheduled = false;
 
 export const dirtyCount = () => dirtyPages.size;
 
-function applyPage(i) {
+function applyPage(i: number) {
   const svg = S.conv.page_svg(i);
   const cur = pagesEl.children[i];
   if (cur) cur.outerHTML = svg;
@@ -32,7 +40,7 @@ function applyPage(i) {
   if (thumbsOpen()) { thumbDirty.add(i); scheduleThumbs(); }
 }
 
-function pageNearViewport(i) {
+function pageNearViewport(i: number): boolean {
   const el = pagesEl.children[i];
   if (!el) return true; // not in the DOM yet: apply now to keep indices aligned
   const r = el.getBoundingClientRect();
@@ -54,15 +62,16 @@ function drainDirty() {
 function scheduleDrain() {
   if (drainScheduled) return;
   drainScheduled = true;
-  (window.requestIdleCallback || ((f) => setTimeout(f, 30)))(drainDirty);
+  if (window.requestIdleCallback) window.requestIdleCallback(drainDirty);
+  else setTimeout(drainDirty, 30);
 }
 
 // ---- page thumbnails -------------------------------------------------------
 // Sidebar minis are blob images of the page SVG strings already in the
 // DOM, so no extra wasm rendering happens; changed pages re-blob on idle.
-const thumbsEl = document.getElementById("thumbs");
-const thumbDirty = new Set();
-let thumbTimer = null;
+const thumbsEl = document.getElementById("thumbs")!;
+const thumbDirty = new Set<number>();
+let thumbTimer: ReturnType<typeof setTimeout> | null = null;
 
 function thumbsOpen() { return !thumbsEl.hidden; }
 
@@ -73,7 +82,7 @@ export const thumbsState = () => ({
   withSrc: [...thumbsEl.querySelectorAll("img")].filter((i) => i.src).length,
 });
 
-function refreshThumb(i) {
+function refreshThumb(i: number) {
   const page = pagesEl.children[i];
   const img = thumbsEl.children[i] && thumbsEl.children[i].querySelector("img");
   if (!page || !img) return;
@@ -85,7 +94,7 @@ function refreshThumb(i) {
 
 function syncThumbCount() {
   const n = pagesEl.children.length;
-  while (thumbsEl.children.length > n) thumbsEl.lastChild.remove();
+  while (thumbsEl.children.length > n) thumbsEl.lastChild!.remove();
   while (thumbsEl.children.length < n) {
     const i = thumbsEl.children.length;
     const cell = document.createElement("div");
@@ -93,7 +102,7 @@ function syncThumbCount() {
     img.onclick = () => pagesEl.children[i] && pagesEl.children[i].scrollIntoView({ block: "start" });
     const no = document.createElement("div");
     no.className = "pageno";
-    no.textContent = i + 1;
+    no.textContent = String(i + 1);
     cell.appendChild(img);
     cell.appendChild(no);
     thumbsEl.appendChild(cell);
@@ -118,9 +127,9 @@ function scheduleThumbs() {
   }, 60);
 }
 
-export function apply(json, ms) {
-  const out = JSON.parse(json);
-  while (pagesEl.children.length > out.total) pagesEl.lastChild.remove();
+export function apply(json: string, ms: number) {
+  const out = JSON.parse(json) as RenderDelta;
+  while (pagesEl.children.length > out.total) pagesEl.lastChild!.remove();
   for (const i of dirtyPages) if (i >= out.total) dirtyPages.delete(i);
   let drawnNow = 0;
   for (const i of out.changed) {
@@ -144,15 +153,16 @@ export function apply(json, ms) {
   report();
 }
 
-export function report(extra) {
+export function report(extra?: string) {
   const c = S.caret ? `caret: ${S.caret.path}, offset ${S.caret.off}` : (S.sel ? "selection" : "no caret");
   status(`${c} | last op ${S.lastMs.toFixed(1)} ms (${S.lastDelta})${extra ? " | " + extra : ""}`);
 }
 
 export function wireRender() {
-  document.getElementById("zoom").onchange = (e) => { S.zoom = +e.target.value; applyZoom(); };
+  const zoomEl = document.getElementById("zoom") as HTMLSelectElement;
+  zoomEl.onchange = () => { S.zoom = +zoomEl.value; applyZoom(); };
 
-  document.getElementById("thumbtoggle").onclick = () => {
+  document.getElementById("thumbtoggle")!.onclick = () => {
     thumbsEl.hidden = !thumbsEl.hidden;
     document.body.classList.toggle("thumbs-open", !thumbsEl.hidden);
     if (thumbsOpen()) {

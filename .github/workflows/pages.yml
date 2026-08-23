@@ -27,6 +27,11 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build wasm
         run: wasm-pack build crates/rdoc-core --release --target web --out-dir ../../web/pkg -- --no-default-features
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build web app (TypeScript)
+        run: cd web && npm ci && npm run build
       - name: Assemble site
         # The demo ships Pretendard (SIL OFL 1.1) as its Korean font; the
         # font is downloaded here, never committed to the repo.

@@ -2,31 +2,37 @@
 // normalization, and every text/structure mutation that goes through it.
 
 import { S, chars, allHits, cmpPos, getRun, sameContainer, siblingPath } from "./state.js";
+import type { Ref } from "./state.js";
+
+export interface ParaRange { path: string; start: number; end: number }
+export type SelRange =
+  | { kind: "same" | "siblings"; pa: string; oa: number; pb: string; ob: number }
+  | { kind: "scatter"; ranges: ParaRange[] };
 import { apply, report } from "./render.js";
 import { drawCaret, drawSelection, lineEdgeOff, lineTarget } from "./view.js";
 
 /// Selection endpoints as an ordered document range, or null when either
 /// endpoint has no provenance mapping.
-export function selRange() {
+export function selRange(): SelRange | null {
   if (!S.sel) return null;
   const A = getRun(S.sel.a), B = getRun(S.sel.b);
   if (!A || !B || A.path === null || B.path === null) return null;
 
-  let pa = A.path, oa = A.start + S.sel.a.k, pb = B.path, ob = B.start + S.sel.b.k;
+  let pa = A.path, oa = (A.start ?? 0) + S.sel.a.k, pb = B.path, ob = (B.start ?? 0) + S.sel.b.k;
   if (pa === pb) {
     if (ob < oa) [oa, ob] = [ob, oa];
     return { kind: "same", pa, oa, pb, ob };
   }
   if (sameContainer(pa, pb)) {
-    const idx = (p) => +p.match(/(\d+)$/)[1];
+    const idx = (p: string) => +p.match(/(\d+)$/)![1];
     if (idx(pb) < idx(pa)) [pa, oa, pb, ob] = [pb, ob, pa, oa];
     return { kind: "siblings", pa, oa, pb, ob };
   }
   // Scattered (e.g. across table cells): decompose the selection into one
   // covered range per touched Document-story paragraph, in document order.
   // Text is removed, cell/paragraph structure stays (Word-like clearing).
-  const ranges = [];
-  const byPath = new Map();
+  const ranges: ParaRange[] = [];
+  const byPath = new Map<string, ParaRange>();
   for (const h of allHits()) {
     if (h.path === null || h.start === null || !h.path.startsWith("d/")) continue;
     const cs = chars(h.text);
@@ -44,15 +50,15 @@ export function selRange() {
 }
 
 // Any selection as per-paragraph {path, start, end} ranges.
-export function selectionRanges() {
+export function selectionRanges(): ParaRange[] | null {
   const r = selRange();
   if (!r) return null;
   if (r.kind === "scatter") return r.ranges;
   if (r.kind === "same") return [{ path: r.pa, start: r.oa, end: r.ob }];
-  const idx = (pp) => +pp.match(/(\d+)$/)[1];
-  const out = [];
+  const idx = (pp: string) => +pp.match(/(\d+)$/)![1];
+  const out: ParaRange[] = [];
   for (let i = idx(r.pa); i <= idx(r.pb); i++) {
-    const path = r.pa.replace(/\d+$/, i);
+    const path = r.pa.replace(/\d+$/, String(i));
     const len = chars(S.conv.paragraph_text_at(path) || "").length;
     const start = i === idx(r.pa) ? r.oa : 0;
     const end = i === idx(r.pb) ? r.ob : len;
@@ -61,7 +67,7 @@ export function selectionRanges() {
   return out;
 }
 
-export function edit(fn) {
+export function edit(fn: () => string) {
   const t = performance.now();
   try {
     const json = fn();
@@ -71,20 +77,22 @@ export function edit(fn) {
   }
 }
 
-export function typeText(s) {
-  if (!S.caret) return;
+export function typeText(s: string) {
+  const c = S.caret;
+  if (!c) return;
   edit(() => {
-    const json = S.conv.insert(S.caret.path, S.caret.off, s);
-    S.caret.off += chars(s).length;
+    const json = S.conv.insert(c.path, c.off, s);
+    c.off += chars(s).length;
     return json;
   });
 }
 
 export function backspace() {
-  if (!S.caret || S.caret.off === 0) return;
+  const c = S.caret;
+  if (!c || c.off === 0) return;
   edit(() => {
-    const json = S.conv.delete(S.caret.path, S.caret.off);
-    S.caret.off -= 1;
+    const json = S.conv.delete(c.path, c.off);
+    c.off -= 1;
     return json;
   });
 }
@@ -104,7 +112,7 @@ export function deleteSel() {
   });
 }
 
-export function replaceSelWith(s) {
+export function replaceSelWith(s: string) {
   const r = selRange();
   if (!r) return;
   edit(() => {
@@ -122,29 +130,31 @@ export function replaceSelWith(s) {
 }
 
 export function enterKey() {
-  if (!S.caret) return;
+  const c = S.caret;
+  if (!c) return;
   edit(() => {
-    const json = S.conv.split(S.caret.path, S.caret.off);
-    S.caret = { path: siblingPath(S.caret.path, +1), off: 0 };
+    const json = S.conv.split(c.path, c.off);
+    S.caret = { path: siblingPath(c.path, +1)!, off: 0 };
     return json;
   });
 }
 
 export function mergePrev() {
-  if (!S.caret) return;
-  const prevPath = siblingPath(S.caret.path, -1);
+  const c = S.caret;
+  if (!c) return;
+  const prevPath = siblingPath(c.path, -1);
   if (prevPath == null) return;
   const prevText = S.conv.paragraph_text_at(prevPath);
   if (prevText == null) return; // previous sibling is a table or missing
   const prevLen = chars(prevText).length;
   edit(() => {
-    const json = S.conv.merge(S.caret.path);
+    const json = S.conv.merge(c.path);
     S.caret = { path: prevPath, off: prevLen };
     return json;
   });
 }
 
-export function toggleFmt(f) {
+export function toggleFmt(f: string) {
   const ranges = selectionRanges();
   if (!ranges || !ranges.length) { report("select some text first (Ctrl+B/I/U)"); return; }
   edit(() => {
@@ -157,9 +167,10 @@ export function toggleFmt(f) {
 }
 
 export function insertFootnote() {
-  if (!S.caret || !S.caret.path.startsWith("d/")) { report("각주는 본문에서만 삽입"); return; }
+  const c = S.caret;
+  if (!c || !c.path.startsWith("d/")) { report("각주는 본문에서만 삽입"); return; }
   edit(() => {
-    const json = S.conv.insert_footnote(S.caret.path, S.caret.off);
+    const json = S.conv.insert_footnote(c.path, c.off);
     const id = S.conv.last_note_id();
     S.caret = id == null ? null : { path: `fn/${id}/0`, off: 0 };
     S.sel = null;
@@ -168,9 +179,10 @@ export function insertFootnote() {
 }
 
 export function deleteFootnote() {
-  if (!S.caret || !S.caret.path.startsWith("fn/")) { report("각주 안에 캐럿을 두고 Ctrl+Alt+D"); return; }
+  const c = S.caret;
+  if (!c || !c.path.startsWith("fn/")) { report("각주 안에 캐럿을 두고 Ctrl+Alt+D"); return; }
   edit(() => {
-    const json = S.conv.delete_footnote(S.caret.path);
+    const json = S.conv.delete_footnote(c.path);
     S.caret = null;
     S.sel = null;
     return json;
@@ -178,9 +190,10 @@ export function deleteFootnote() {
 }
 
 export function insertEndnote() {
-  if (!S.caret || !S.caret.path.startsWith("d/")) { report("미주는 본문에서만 삽입"); return; }
+  const c = S.caret;
+  if (!c || !c.path.startsWith("d/")) { report("미주는 본문에서만 삽입"); return; }
   edit(() => {
-    const json = S.conv.insert_endnote(S.caret.path, S.caret.off);
+    const json = S.conv.insert_endnote(c.path, c.off);
     const id = S.conv.last_note_id();
     S.caret = id == null ? null : { path: `en/${id}/0`, off: 0 };
     S.sel = null;
@@ -189,9 +202,10 @@ export function insertEndnote() {
 }
 
 export function deleteEndnote() {
-  if (!S.caret || !S.caret.path.startsWith("en/")) { report("미주 안에 캐럿을 두고 Ctrl+Alt+D"); return; }
+  const c = S.caret;
+  if (!c || !c.path.startsWith("en/")) { report("미주 안에 캐럿을 두고 Ctrl+Alt+D"); return; }
   edit(() => {
-    const json = S.conv.delete_endnote(S.caret.path);
+    const json = S.conv.delete_endnote(c.path);
     S.caret = null;
     S.sel = null;
     return json;
@@ -205,12 +219,14 @@ export function deleteNote() {
 }
 
 export function forwardDelete() {
-  const len = chars(S.conv.paragraph_text_at(S.caret.path) || "").length;
-  if (S.caret.off >= len) {
+  const c = S.caret;
+  if (!c) return; // callers guard; keep the invariant explicit for types
+  const len = chars(S.conv.paragraph_text_at(c.path) || "").length;
+  if (c.off >= len) {
     // End of paragraph: pull the next sibling paragraph up (forward merge).
-    const nextPath = siblingPath(S.caret.path, +1);
+    const nextPath = siblingPath(c.path, +1);
     if (nextPath == null || S.conv.paragraph_text_at(nextPath) == null) return;
-    const keep = { ...S.caret };
+    const keep = { ...c };
     edit(() => {
       const json = S.conv.merge(nextPath);
       S.caret = keep; // the merge lands in our paragraph; offset unchanged
@@ -219,20 +235,22 @@ export function forwardDelete() {
     return;
   }
   edit(() => {
-    const json = S.conv.delete(S.caret.path, S.caret.off + 1);
+    const json = S.conv.delete(c.path, c.off + 1);
     return json; // caret offset unchanged
   });
 }
 
-export function caretToLineEdge(end) {
-  const off = lineEdgeOff(S.caret, end);
-  if (off !== null) { S.caret.off = off; drawCaret(); report(); }
+export function caretToLineEdge(end: boolean) {
+  const c = S.caret;
+  if (!c) return; // callers guard
+  const off = lineEdgeOff(c, end);
+  if (off !== null) { c.off = off; drawCaret(); report(); }
 }
 
 // Select from the first to the last hit run of the document (display and
 // copy; range edits still require compatible endpoints).
 export function selectAll() {
-  let first = null, last = null;
+  let first: Ref | null = null, last: Ref | null = null;
   for (let pg = 0; pg < S.pageHits.length; pg++) {
     for (const h of S.pageHits[pg] || []) {
       if (h.adv.length === 0) continue;
@@ -250,7 +268,8 @@ export function selectAll() {
 // Move the caret one visual line up or down: from its current on-page
 // position, pick the nearest hit on the closest baseline in that
 // direction (crossing to the neighboring page when needed).
-export function moveCaretLine(dir) {
+export function moveCaretLine(dir: number) {
+  if (!S.caret) return; // callers guard
   const target = lineTarget(S.caret, dir);
   if (!target) return;
   S.caret = target;

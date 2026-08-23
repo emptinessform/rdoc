@@ -7,15 +7,17 @@ import { S, chars, allHits, cum, orderSel } from "./state.js";
 import { pagesEl, report } from "./render.js";
 import { drawCaret, drawSelection, refForOffset } from "./view.js";
 import { edit, replaceSelWith } from "./edit.js";
+import type { ParaRange } from "./edit.js";
 import { imeEl } from "./ime.js";
 
-const findbar = document.getElementById("findbar");
-export const findq = document.getElementById("findq");
-const findcount = document.getElementById("findcount");
-export const replq = document.getElementById("replq");
+const findbar = document.getElementById("findbar")!;
+export const findq = document.getElementById("findq") as HTMLInputElement;
+const findcount = document.getElementById("findcount")!;
+export const replq = document.getElementById("replq") as HTMLInputElement;
 const FIND_HL_CAP = 500; // overlay rects only; count/cycling stay exact
-let findMatches = [];    // {path, start, end} in document order
+let findMatches: ParaRange[] = []; // in document order
 let findCur = -1;
+let findDebounce: ReturnType<typeof setTimeout> | undefined;
 
 export const isFindOpen = () => !findbar.hidden;
 export const refindAfterApply = () => { if (!findbar.hidden) runFind(true); };
@@ -26,14 +28,14 @@ export const findState = () => ({
   hl: document.querySelectorAll(".findhl").length,
 });
 
-function findParaOrder() {
-  const seen = new Set(), out = [];
+function findParaOrder(): string[] {
+  const seen = new Set<string>(), out: string[] = [];
   for (const h of allHits())
     if (h.path !== null && !seen.has(h.path)) { seen.add(h.path); out.push(h.path); }
   return out;
 }
 
-export function runFind(keepCur) {
+export function runFind(keepCur: boolean) {
   const q = findq.value;
   const prev = keepCur && findCur >= 0 ? findMatches[findCur] : null;
   findMatches = [];
@@ -62,7 +64,7 @@ export function runFind(keepCur) {
 export function drawFindHl() {
   document.querySelectorAll(".findhl").forEach((n) => n.remove());
   if (findbar.hidden || !findMatches.length) return;
-  const byPath = new Map();
+  const byPath = new Map<string, import("./state.js").HitRun[]>();
   for (const h of allHits()) {
     if (h.path === null || h.start === null) continue;
     let a = byPath.get(h.path);
@@ -73,16 +75,17 @@ export function drawFindHl() {
     if (m === findCur) continue; // the current match is the live selection
     const { path, start, end } = findMatches[m];
     for (const h of byPath.get(path) || []) {
-      const k1 = Math.max(start, h.start) - h.start;
-      const k2 = Math.min(end, h.start + h.adv.length) - h.start;
+      const hs = h.start!; // byPath only holds runs with provenance
+      const k1 = Math.max(start, hs) - hs;
+      const k2 = Math.min(end, hs + h.adv.length) - hs;
       if (k2 <= k1) continue;
       const svg = pagesEl.children[h.page - 1];
       if (!svg) continue;
       const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      r.setAttribute("x", h.x + cum(h, k1));
-      r.setAttribute("y", h.y - 0.85 * h.size);
-      r.setAttribute("width", cum(h, k2) - cum(h, k1));
-      r.setAttribute("height", 1.1 * h.size);
+      r.setAttribute("x", String(h.x + cum(h, k1)));
+      r.setAttribute("y", String(h.y - 0.85 * h.size));
+      r.setAttribute("width", String(cum(h, k2) - cum(h, k1)));
+      r.setAttribute("height", String(1.1 * h.size));
       r.setAttribute("fill", "#f9ab00");
       r.setAttribute("opacity", "0.35");
       r.setAttribute("class", "findhl");
@@ -91,7 +94,7 @@ export function drawFindHl() {
   }
 }
 
-export function gotoFind(dir) {
+export function gotoFind(dir: number) {
   if (!findMatches.length) return;
   findCur = ((findCur + dir) % findMatches.length + findMatches.length) % findMatches.length;
   const m = findMatches[findCur];
@@ -171,13 +174,13 @@ export function replaceAll() {
 
 export function wireFind() {
   findq.addEventListener("input", () => {
-    clearTimeout(findq._t);
-    findq._t = setTimeout(() => runFind(false), 150);
+    clearTimeout(findDebounce);
+    findDebounce = setTimeout(() => runFind(false), 150);
   });
   findq.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      clearTimeout(findq._t);
+      clearTimeout(findDebounce);
       runFind(true);
       gotoFind(e.shiftKey ? -1 : 1);
     } else if (e.key === "Escape") {
@@ -186,15 +189,15 @@ export function wireFind() {
     }
     e.stopPropagation();
   });
-  document.getElementById("findprev").onclick = () => gotoFind(-1);
-  document.getElementById("findnext").onclick = () => gotoFind(1);
-  document.getElementById("findclose").onclick = closeFind;
+  document.getElementById("findprev")!.onclick = () => gotoFind(-1);
+  document.getElementById("findnext")!.onclick = () => gotoFind(1);
+  document.getElementById("findclose")!.onclick = closeFind;
 
   replq.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); replaceCurrent(); }
     else if (e.key === "Escape") { e.preventDefault(); closeFind(); }
     e.stopPropagation();
   });
-  document.getElementById("replone").onclick = replaceCurrent;
-  document.getElementById("replall").onclick = replaceAll;
+  document.getElementById("replone")!.onclick = replaceCurrent;
+  document.getElementById("replall")!.onclick = replaceAll;
 }

@@ -8,7 +8,10 @@
 ## 실행 방법
 
 ```bash
-# 0) 서버 (워크스페이스 루트의 web/에서, 한국어 폰트를 web/malgun.ttf로 먼저 복사)
+# 0) 앱 빌드 + 서버 (워크스페이스 루트의 web/에서; 한국어 폰트를
+#    web/malgun.ttf로 먼저 복사). 소스는 web/src/*.ts — web/js/는 tsc
+#    산출물이므로 소스 수정 후 반드시 재빌드.
+npm install && npm run build
 python -m http.server 8741
 
 # 1) 러너 — 전체 배터리 (PASS/FAIL 집계, 실패 시 종료 코드 1)

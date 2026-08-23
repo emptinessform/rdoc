@@ -1,0 +1,11 @@
+{
+  "name": "rdoc-web",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -p . --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

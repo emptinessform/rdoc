@@ -9,14 +9,14 @@ import { edit, selRange, selectionRanges } from "./edit.js";
 // Paragraph alignment for the caret paragraph or every paragraph the
 // selection touches, as one history entry. Text is unchanged, so the
 // caret survives; the selection is redrawn from its refs afterwards.
-export function alignSelection(align) {
-  let paths = [];
+export function alignSelection(align: string) {
+  let paths: string[] = [];
   const r = selRange();
   if (r && r.kind === "scatter") paths = [...new Set(r.ranges.map((x) => x.path))];
   else if (r && r.kind === "siblings") {
-    const idx = (pp) => +pp.match(/(\d+)$/)[1];
+    const idx = (pp: string) => +pp.match(/(\d+)$/)![1];
     for (let i = idx(r.pa); i <= idx(r.pb); i++)
-      paths.push(r.pa.replace(/\d+$/, i));
+      paths.push(r.pa.replace(/\d+$/, String(i)));
   } else if (r) paths = [r.pa];
   else if (S.caret) paths = [S.caret.path];
   if (!paths.length) { report("정렬: 캐럿을 두거나 선택하세요"); return; }
@@ -32,7 +32,7 @@ export function alignSelection(align) {
 
 // Font size over the selection. Sizes reflow lines, so the selection's
 // page refs go stale — collapse to a caret at the range start instead.
-export function applyFontSize(pt) {
+export function applyFontSize(pt: number) {
   if (!(pt >= 6 && pt <= 96)) return;
   const ranges = selectionRanges();
   if (!ranges || !ranges.length) { report("크기: 텍스트를 선택하세요"); return; }
@@ -46,7 +46,7 @@ export function applyFontSize(pt) {
 
 // Text color over the selection. Color does not reflow, so the
 // selection refs stay valid and are restored after the edit.
-export function applyFontColor(hex) {
+export function applyFontColor(hex: string) {
   const ranges = selectionRanges();
   if (!ranges || !ranges.length) { report("색: 텍스트를 선택하세요"); return; }
   const keepSel = S.sel && { a: { ...S.sel.a }, b: { ...S.sel.b } };
@@ -55,13 +55,13 @@ export function applyFontColor(hex) {
 }
 
 // Paragraph style for the caret paragraph / selected paragraphs.
-export function styleSelection(styleId) {
-  let paths = [];
+export function styleSelection(styleId: string) {
+  let paths: string[] = [];
   const r = selRange();
   if (r && r.kind === "scatter") paths = [...new Set(r.ranges.map((x) => x.path))];
   else if (r && r.kind === "siblings") {
-    const idx = (pp) => +pp.match(/(\d+)$/)[1];
-    for (let i = idx(r.pa); i <= idx(r.pb); i++) paths.push(r.pa.replace(/\d+$/, i));
+    const idx = (pp: string) => +pp.match(/(\d+)$/)![1];
+    for (let i = idx(r.pa); i <= idx(r.pb); i++) paths.push(r.pa.replace(/\d+$/, String(i)));
   } else if (r) paths = [r.pa];
   else if (S.caret) paths = [S.caret.path];
   if (!paths.length) { report("스타일: 캐럿을 두세요"); return; }
@@ -74,7 +74,7 @@ export function styleSelection(styleId) {
 }
 
 // Table structure ops act on the caret's cell (top-level tables).
-export function tableOp(op) {
+export function tableOp(op: string) {
   if (!S.caret || !/^d\/\d+\.\d+\.\d+\.\d+$/.test(S.caret.path)) {
     report("표 셀에 캐럿을 두세요");
     return;
@@ -90,7 +90,7 @@ export function tableOp(op) {
 
 // Word-style Tab in a table: move to the next/previous cell selecting its
 // content; Tab at the last cell appends a row (via the structure op).
-function landInCell(t, r, c) {
+function landInCell(t: number, r: number, c: number): boolean {
   const path = `d/${t}.${r}.${c}.0`;
   const text = S.conv.paragraph_text_at(path);
   if (text == null) return false;
@@ -104,13 +104,13 @@ function landInCell(t, r, c) {
   return true;
 }
 
-function lastColOf(t, r) {
+function lastColOf(t: number, r: number): number {
   let c = 0;
   while (S.conv.paragraph_text_at(`d/${t}.${r}.${c + 1}.0`) != null) c++;
   return c;
 }
 
-export function tabCell(path, dir) {
+export function tabCell(path: string | null | undefined, dir: number): boolean {
   const m = path && path.match(/^d\/(\d+)\.(\d+)\.(\d+)\.\d+$/);
   if (!m) return false;
   const [t, r, c] = [+m[1], +m[2], +m[3]];
@@ -131,27 +131,27 @@ export function tabCell(path, dir) {
 }
 
 export function wireFormat() {
-  document.querySelectorAll("#alignbtns button").forEach((b) => {
-    b.onclick = () => alignSelection(b.dataset.align);
+  document.querySelectorAll<HTMLButtonElement>("#alignbtns button").forEach((b) => {
+    b.onclick = () => alignSelection(b.dataset.align!);
   });
 
-  document.querySelectorAll("#tblbtns button").forEach((b) => {
-    b.onclick = () => tableOp(b.dataset.op);
+  document.querySelectorAll<HTMLButtonElement>("#tblbtns button").forEach((b) => {
+    b.onclick = () => tableOp(b.dataset.op!);
   });
 
-  const fontcolorEl = document.getElementById("fontcolor");
+  const fontcolorEl = document.getElementById("fontcolor") as HTMLInputElement;
   fontcolorEl.addEventListener("change", () => {
     applyFontColor(fontcolorEl.value.replace("#", "").toUpperCase());
   });
 
-  const fontsizeEl = document.getElementById("fontsize");
+  const fontsizeEl = document.getElementById("fontsize") as HTMLInputElement;
   fontsizeEl.addEventListener("change", () => {
     applyFontSize(+fontsizeEl.value);
     fontsizeEl.blur();
   });
   fontsizeEl.addEventListener("keydown", (e) => e.stopPropagation());
 
-  const parastyleEl = document.getElementById("parastyle");
+  const parastyleEl = document.getElementById("parastyle") as HTMLSelectElement;
   parastyleEl.addEventListener("change", () => {
     if (parastyleEl.value) styleSelection(parastyleEl.value);
     parastyleEl.selectedIndex = 0;

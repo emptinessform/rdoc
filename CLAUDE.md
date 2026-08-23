@@ -26,6 +26,9 @@ cargo run --release -p rdoc-core --bin poc
 # wasm 빌드
 wasm-pack build crates/rdoc-core --release --target web --out-dir ../../web/pkg -- --no-default-features
 
+# 웹 앱 빌드: 소스는 web/src/*.ts (TypeScript), web/js/는 tsc 산출물
+cd web && npm install && npm run build   # tsc -p .
+
 # 웹 데모 서버 (web/에서): 한국어 폰트를 web/malgun.ttf로 먼저 복사
 python -m http.server 8741
 

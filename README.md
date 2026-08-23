@@ -55,6 +55,7 @@ cargo run --release -p rdoc-core --bin poc
 
 # wasm 에디터
 wasm-pack build crates/rdoc-core --release --target web --out-dir ../../web/pkg -- --no-default-features
+cd web && npm install && npm run build   # TypeScript → web/js/
 # 한국어 폰트 준비 (저장소에 포함하지 않음 — 라이선스):
 #   Windows: cp /c/Windows/Fonts/malgun.ttf web/
 #   또는 Noto Sans KR 등 자유 라이선스 폰트를 web/malgun.ttf로

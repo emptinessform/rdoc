@@ -5,14 +5,15 @@ import { S, chars } from "./state.js";
 import { drawPreedit } from "./view.js";
 import { edit, selRange, deleteSel } from "./edit.js";
 
-export const imeEl = document.getElementById("ime");
+export const imeEl = document.getElementById("ime") as HTMLInputElement;
 
-function applyComp(data) {
-  if (!S.comp || !S.caret) return;
+function applyComp(data: string) {
+  const comp = S.comp, caret = S.caret;
+  if (!comp || !caret) return;
   edit(() => {
-    const json = S.conv.replace_range(S.caret.path, S.comp.base, S.comp.base + S.comp.len, data);
-    S.comp.len = chars(data).length;
-    S.caret.off = S.comp.base + S.comp.len;
+    const json = S.conv.replace_range(caret.path, comp.base, comp.base + comp.len, data);
+    comp.len = chars(data).length;
+    caret.off = comp.base + comp.len;
     return json;
   });
 }

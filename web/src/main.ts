@@ -27,6 +27,13 @@ import {
 import { imeEl, wireIme } from "./ime.js";
 import { clickAt, wireInput } from "./input.js";
 
+declare global {
+  interface Window {
+    /** Deterministic hooks for the browser test suites (web/tests/). */
+    __t: Record<string, unknown>;
+  }
+}
+
 await init();
 S.conv = new SvgConverter();
 
@@ -35,7 +42,7 @@ S.conv = new SvgConverter();
 // font the Pages deploy ships (Pretendard, SIL OFL), registered under
 // the common family names so typical Korean documents resolve to it.
 // If neither loads, rdocx's bundled fallback fonts take over.
-async function addFirstFont(sources) {
+async function addFirstFont(sources: [string[], string][]) {
   for (const [families, url] of sources) {
     try {
       const res = await fetch(url);
@@ -62,16 +69,16 @@ wireInput();
 
 // ---- load ------------------------------------------------------------------
 
-document.getElementById("demo").onclick = () => {
+document.getElementById("demo")!.onclick = () => {
   S.conv.load_demo();
   const t = performance.now();
   apply(S.conv.render(), performance.now() - t);
 };
 
-document.getElementById("save").onclick = () => {
+document.getElementById("save")!.onclick = () => {
   try {
     const bytes = S.conv.save_docx();
-    const blob = new Blob([bytes], {
+    const blob = new Blob([bytes as unknown as BlobPart], {
       type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     });
     const a = document.createElement("a");
@@ -85,9 +92,10 @@ document.getElementById("save").onclick = () => {
   }
 };
 
-document.getElementById("file").onchange = async (e) => {
-  const f = e.target.files[0];
-  e.target.value = "";
+const fileEl = document.getElementById("file") as HTMLInputElement;
+fileEl.onchange = async () => {
+  const f = fileEl.files && fileEl.files[0];
+  fileEl.value = "";
   if (!f) return;
   try {
     S.conv.load_docx(new Uint8Array(await f.arrayBuffer()));
@@ -113,21 +121,21 @@ window.__t = {
   undo: doUndo,
   redo: doRedo,
   paraTexts: () => S.conv.paragraph_texts(),
-  textAt: (p) => S.conv.paragraph_text_at(p),
-  pathOrder: (p) => S.conv.path_order(p),
+  textAt: (p: string) => S.conv.paragraph_text_at(p),
+  pathOrder: (p: string) => S.conv.path_order(p),
   saveDocx: () => S.conv.save_docx(),
   insertFootnote,
   deleteFootnote,
   insertEndnote,
   deleteEndnote,
   deleteNote,
-  loadBytes: (bytes) => {
+  loadBytes: (bytes: Uint8Array) => {
     S.conv.load_docx(bytes);
     const t0 = performance.now();
     S.caret = null; S.sel = null;
     apply(S.conv.render(), performance.now() - t0);
   },
-  simIme: (steps) => {
+  simIme: (steps: string[]) => {
     imeEl.focus();
     imeEl.dispatchEvent(new CompositionEvent("compositionstart"));
     for (const s of steps.slice(0, -1))
@@ -139,9 +147,9 @@ window.__t = {
     imeEl.focus();
     imeEl.dispatchEvent(new CompositionEvent("compositionstart"));
   },
-  imeUpdate: (s) => imeEl.dispatchEvent(new CompositionEvent("compositionupdate", { data: s })),
-  imeEnd: (s) => imeEl.dispatchEvent(new CompositionEvent("compositionend", { data: s })),
-  select: (page, x1, y1, x2, y2) => {
+  imeUpdate: (s: string) => imeEl.dispatchEvent(new CompositionEvent("compositionupdate", { data: s })),
+  imeEnd: (s: string) => imeEl.dispatchEvent(new CompositionEvent("compositionend", { data: s })),
+  select: (page: number, x1: number, y1: number, x2: number, y2: number) => {
     const p = findHit(page, x1, y1), q = findHit(page, x2, y2);
     if (!p || !q) return null;
     S.sel = orderSel(
@@ -155,41 +163,41 @@ window.__t = {
   copy: () => { copySelection(); return S.lastCopied; },
   cut: () => { cutSelection(); return S.lastCopied; },
   selText: selectedText,
-  setZoom: (z) => { S.zoom = z; applyZoom(); },
-  loadUrl: async (u) => {
+  setZoom: (z: number) => { S.zoom = z; applyZoom(); },
+  loadUrl: async (u: string) => {
     const b = new Uint8Array(await (await fetch(u)).arrayBuffer());
     S.conv.load_docx(b);
     const t = performance.now();
     apply(S.conv.render(), performance.now() - t);
   },
-  hits: (page) => S.pageHits[page - 1] || [],
+  hits: (page: number) => S.pageHits[page - 1] || [],
   dirtyCount,
   openFind,
   closeFind,
-  findQuery: (q) => { findq.value = q; runFind(false); },
+  findQuery: (q: string) => { findq.value = q; runFind(false); },
   findNext: () => gotoFind(1),
   findPrev: () => gotoFind(-1),
-  replaceWith: (q) => { replq.value = q; replaceCurrent(); },
-  replaceAllWith: (q) => { replq.value = q; replaceAll(); },
+  replaceWith: (q: string) => { replq.value = q; replaceCurrent(); },
+  replaceAllWith: (q: string) => { replq.value = q; replaceAll(); },
   paste: doPaste,
   align: alignSelection,
   tableOp,
-  tabCell: (dir) => tabCell(S.caret ? S.caret.path : (S.sel && (getRun(S.sel.a) || {}).path), dir),
+  tabCell: (dir: number) => tabCell(S.caret ? S.caret.path : S.sel ? getRun(S.sel.a)?.path ?? null : null, dir),
   setStyle: styleSelection,
   insertImage: insertImageBytes,
-  selectImageAt: (k) => selectImage(document.querySelectorAll("#pages svg image")[k]),
+  selectImageAt: (k: number) => selectImage(document.querySelectorAll<SVGImageElement>("#pages svg image")[k]),
   imageSel: () => (S.imageSel ? S.imageSel.index : null),
   deleteImage: deleteSelectedImage,
   fontSize: applyFontSize,
   fontColor: applyFontColor,
-  fmtOn: (ranges, f) => S.conv.ranges_format_on(JSON.stringify(ranges), f),
+  fmtOn: (ranges: unknown, f: string) => S.conv.ranges_format_on(JSON.stringify(ranges), f),
   thumbs: thumbsState,
-  toggleThumbs: () => document.getElementById("thumbtoggle").click(),
+  toggleThumbs: () => document.getElementById("thumbtoggle")!.click(),
   selRanges: selectionRanges,
   findState,
   state: () => ({
     caret: S.caret, sel: S.sel, lastMs: S.lastMs, lastDelta: S.lastDelta, zoom: S.zoom,
-    mapped: allHits().filter(h => h.path !== null).length,
+    mapped: allHits().filter((h) => h.path !== null).length,
     total: allHits().length,
   }),
 };

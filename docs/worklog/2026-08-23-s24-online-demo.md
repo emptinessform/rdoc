@@ -32,8 +32,13 @@ rhwp처럼 "무료, 설치 없이" 열리는 공개 데모를 GitHub Pages에 �
   ("OPC package error: ZIP error…") — 가드가 감싸는 바로 그 호출임을
   훅으로 확인.
 - malgun 복원 후 러너 스모크 5종(ime/cellsel/img/thumbs/repl) PASS.
-- CI/URL 검증은 푸시 후: Actions 그린 + https://emptinessform.github.io/rdoc/
-  로드 확인 예정 (결과 이 파일에 추기).
+- 배포 검증 (푸시 후 추기): 첫 실행은 configure-pages의 사이트 생성이
+  "Resource not accessible by integration"으로 실패 — GITHUB_TOKEN에는
+  Pages 사이트 생성 권한이 없음. `gh api -X POST repos/…/pages -f
+  build_type=workflow`로 1회 활성화 후 재실행 → **그린**.
+  https://emptinessform.github.io/rdoc/ 에서 index/wasm/폰트 200,
+  헤드리스로 데모 로드 → 2/2페이지 렌더 273.8ms, **한국어 122런
+  Pretendard 셰이핑 확인**.
 
 ## 메모
 

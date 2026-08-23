@@ -3,10 +3,14 @@
 // text extraction used by copy.
 
 import { S, chars, width, cum, allHits, cmpPos, orderSel, storyOf } from "./state.js";
+import type { HitRun, Pos, Ref } from "./state.js";
+
+/** A document position resolved to a concrete on-page hit run. */
+export interface Vis { hit: HitRun; k: number }
 import { pagesEl } from "./render.js";
 
-export function findHit(page, x, y) {
-  let best = null, bestScore = Infinity;
+export function findHit(page: number, x: number, y: number): Vis | null {
+  let best: HitRun | null = null, bestScore = Infinity;
   for (const h of S.pageHits[page - 1] || []) {
     // Zero-advance hits are empty paragraphs: clickable, but real text
     // runs win when both are near (their spans cover actual distance).
@@ -22,9 +26,9 @@ export function findHit(page, x, y) {
   return { hit: best, k };
 }
 
-export function visFor(pos) {
+export function visFor(pos: Pos | null): Vis | null {
   if (!pos) return null;
-  let best = null;
+  let best: Vis | null = null;
   for (const h of allHits()) {
     if (h.path !== pos.path || h.start === null) continue;
     const len = chars(h.text).length;
@@ -38,7 +42,7 @@ export function visFor(pos) {
 
 const caretVis = () => visFor(S.caret);
 
-export function refAt(pos) {
+export function refAt(pos: Pos | null): Ref | null {
   const vis = visFor(pos);
   if (!vis) return null;
   return { page: vis.hit.page, idx: vis.hit.id, k: vis.k };
@@ -63,9 +67,9 @@ export function drawCaret() {
   if (!svg) return;
   const x = h.x + cum(h, k);
   const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  line.setAttribute("x1", x); line.setAttribute("x2", x);
-  line.setAttribute("y1", h.y - 0.85 * h.size);
-  line.setAttribute("y2", h.y + 0.25 * h.size);
+  line.setAttribute("x1", String(x)); line.setAttribute("x2", String(x));
+  line.setAttribute("y1", String(h.y - 0.85 * h.size));
+  line.setAttribute("y2", String(h.y + 0.25 * h.size));
   line.setAttribute("stroke", "#1a73e8");
   line.setAttribute("stroke-width", "0.8");
   line.setAttribute("class", "caret");
@@ -86,10 +90,10 @@ export function drawSelection() {
     const svg = pagesEl.children[h.page - 1];
     if (!svg) continue;
     const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    r.setAttribute("x", h.x + cum(h, k1));
-    r.setAttribute("y", h.y - 0.85 * h.size);
-    r.setAttribute("width", cum(h, k2) - cum(h, k1));
-    r.setAttribute("height", 1.1 * h.size);
+    r.setAttribute("x", String(h.x + cum(h, k1)));
+    r.setAttribute("y", String(h.y - 0.85 * h.size));
+    r.setAttribute("width", String(cum(h, k2) - cum(h, k1)));
+    r.setAttribute("height", String(1.1 * h.size));
     r.setAttribute("fill", "#1a73e8");
     r.setAttribute("opacity", "0.28");
     r.setAttribute("class", "selrect");
@@ -114,12 +118,12 @@ export function drawPreedit() {
     if (!svg) continue;
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     const y = h.y + 0.16 * h.size;
-    line.setAttribute("x1", h.x + cum(h, k1));
-    line.setAttribute("x2", h.x + cum(h, k2));
-    line.setAttribute("y1", y);
-    line.setAttribute("y2", y);
+    line.setAttribute("x1", String(h.x + cum(h, k1)));
+    line.setAttribute("x2", String(h.x + cum(h, k2)));
+    line.setAttribute("y1", String(y));
+    line.setAttribute("y2", String(y));
     line.setAttribute("stroke", "#1a73e8");
-    line.setAttribute("stroke-width", 0.07 * h.size);
+    line.setAttribute("stroke-width", String(0.07 * h.size));
     line.setAttribute("class", "preedit");
     svg.appendChild(line);
   }
@@ -148,7 +152,7 @@ export function selectedText() {
 }
 
 // Hit-ref for a character offset of one paragraph, on any of its lines.
-export function refForOffset(path, offset, wantEnd) {
+export function refForOffset(path: string, offset: number, wantEnd: boolean): Ref | null {
   for (const cand of allHits()) {
     if (cand.path !== path || cand.start === null) continue;
     const lo = cand.start, hi = cand.start + chars(cand.text).length;
@@ -158,7 +162,7 @@ export function refForOffset(path, offset, wantEnd) {
   return null;
 }
 
-export function selectParaOffsets(path, lo, hi) {
+export function selectParaOffsets(path: string, lo: number, hi: number): boolean {
   const a = refForOffset(path, lo, false), b = refForOffset(path, hi, true);
   if (!a || !b) return false;
   S.sel = orderSel(a, b);
@@ -169,11 +173,11 @@ export function selectParaOffsets(path, lo, hi) {
 
 // Home/End relative to a position's visual line: among hits of the same
 // paragraph on the same baseline, the smallest or largest offset.
-export function lineEdgeOff(pos, end) {
+export function lineEdgeOff(pos: Pos, end: boolean): number | null {
   const vis = visFor(pos);
   if (!vis) return end ? chars(S.conv.paragraph_text_at(pos.path) || "").length : 0;
   const { hit: h } = vis;
-  let bestOff = null;
+  let bestOff: number | null = null;
   for (const cand of S.pageHits[h.page - 1] || []) {
     if (cand.path !== pos.path || cand.start === null) continue;
     if (Math.abs(cand.y - h.y) > 0.4 * h.size) continue;
@@ -187,15 +191,15 @@ export function lineEdgeOff(pos, end) {
 // The (path, off) one visual line above or below `pos`, or null. Only
 // lines of the same story count: arrowing down from the last body line
 // of a page skips headers/footers/notes and lands on the next page's body.
-export function lineTarget(pos, dir) {
+export function lineTarget(pos: Pos, dir: number): Pos | null {
   const vis = visFor(pos);
   if (!vis) return null;
   const { hit: h, k } = vis;
   const story = storyOf(h.path);
   const cx = h.x + cum(h, k);
   const half = 0.4 * h.size; // same-baseline tolerance
-  let bestLine = null;
-  const consider = (cand, yRef) => {
+  let bestLine: number | null = null;
+  const consider = (cand: HitRun, yRef: number) => {
     if (storyOf(cand.path) !== story) return;
     const dy = dir > 0 ? cand.y - yRef : yRef - cand.y;
     if (dy <= half) return; // same line or wrong direction
@@ -206,14 +210,14 @@ export function lineTarget(pos, dir) {
   const pages = [h.page];
   if (dir > 0 && S.pageHits[h.page]) pages.push(h.page + 1);
   if (dir < 0 && h.page > 1) pages.push(h.page - 1);
-  const yRefFor = (pg) => pg === h.page ? h.y : (dir > 0 ? -1e9 : 1e9);
-  let target = null;
+  const yRefFor = (pg: number) => pg === h.page ? h.y : (dir > 0 ? -1e9 : 1e9);
+  let target: HitRun | null = null;
   for (const pg of pages) {
     bestLine = null;
     for (const cand of S.pageHits[pg - 1] || []) consider(cand, yRefFor(pg));
     if (bestLine === null) continue;
     // Pass 2: on that baseline, nearest x.
-    let best = null;
+    let best: { cand: HitRun; dx: number } | null = null;
     for (const cand of S.pageHits[pg - 1] || []) {
       if (storyOf(cand.path) !== story) continue;
       const dy = dir > 0 ? cand.y - yRefFor(pg) : yRefFor(pg) - cand.y;
