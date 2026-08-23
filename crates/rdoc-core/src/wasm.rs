@@ -792,6 +792,35 @@ impl SvgConverter {
         )
     }
 
+    /// Insert a rows x cols table (equal column widths, single gray
+    /// borders, one empty paragraph per cell) right AFTER the caret's
+    /// top-level body paragraph, as one history entry.
+    pub fn insert_table_after(
+        &mut self,
+        path: &str,
+        rows: usize,
+        cols: usize,
+    ) -> Result<String, JsValue> {
+        if !(1..=50).contains(&rows) || !(1..=20).contains(&cols) {
+            return Err(err("table size out of range"));
+        }
+        let Some(crate::EditPath::Doc(ch)) = parse_edit_path(path) else {
+            return Err(err("tables insert in the body story"));
+        };
+        if ch.len() != 1 {
+            return Err(err("put the caret in a top-level body paragraph"));
+        }
+        let index = ch[0] + 1;
+        self.mutate(
+            move |d| {
+                let mut table = d.insert_table(index, rows, cols);
+                table.set_borders(rdocx::BorderStyle::Single, 4, "808080");
+                true
+            },
+            "insert table",
+        )
+    }
+
     /// Merge horizontally adjacent cells of one top-level-table row, as
     /// one history entry. Input: JSON array of cell paragraph paths
     /// ("d/T.R.C.P"); they must share the table and row and cover

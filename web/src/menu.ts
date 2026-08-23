@@ -30,6 +30,7 @@ import { copySelection, cutSelection, doPaste } from "./clipboard.js";
 import { openFind, openReplace } from "./find.js";
 import {
   alignSelection, tableOp, toggleList, applyLineSpacing, mergeCells, splitCell,
+  openTableBar,
 } from "./format.js";
 import { openLinkBar, removeLink } from "./link.js";
 
@@ -135,6 +136,7 @@ const COMMANDS: Record<string, () => void> = {
   spacing1: () => applyLineSpacing(1),
   spacing15: () => applyLineSpacing(1.5),
   spacing2: () => applyLineSpacing(2),
+  insertTable: openTableBar,
   rowAdd: () => tableOp("r"),
   rowDel: () => tableOp("R"),
   colAdd: () => tableOp("c"),

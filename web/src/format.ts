@@ -242,6 +242,39 @@ export function tableOp(op: string) {
   });
 }
 
+// ---- table insertion (inline bar) ------------------------------------------
+
+let tablePending: string | null = null; // caret's body paragraph path
+
+export function openTableBar() {
+  const c = S.caret;
+  if (!c || !/^d\/\d+$/.test(c.path)) {
+    report("표: 본문 문단에 캐럿을 두세요");
+    return;
+  }
+  tablePending = c.path;
+  document.getElementById("tablebar")!.hidden = false;
+  (document.getElementById("tablerows") as HTMLInputElement).focus();
+}
+
+export function closeTableBar() {
+  document.getElementById("tablebar")!.hidden = true;
+  tablePending = null;
+}
+
+export function applyInsertTable(rows: number, cols: number) {
+  const path = tablePending ?? (S.caret && /^d\/\d+$/.test(S.caret.path) ? S.caret.path : null);
+  if (!path) { report("표: 본문 문단에 캐럿을 두세요"); return; }
+  const tableIndex = +path.match(/(\d+)$/)![1] + 1;
+  edit(() => {
+    const json = S.conv.insert_table_after(path, rows, cols);
+    S.caret = { path: `d/${tableIndex}.0.0.0`, off: 0 };
+    S.sel = null;
+    return json;
+  });
+  closeTableBar();
+}
+
 // Merge the adjacent same-row cells a scatter selection covers. The
 // caret lands in the merged cell; the first cell keeps its path.
 export function mergeCells() {
@@ -332,6 +365,19 @@ export function wireFormat() {
   });
   document.getElementById("mergebtn")!.onclick = mergeCells;
   document.getElementById("splitbtn")!.onclick = splitCell;
+
+  const rowsEl = document.getElementById("tablerows") as HTMLInputElement;
+  const colsEl = document.getElementById("tablecols") as HTMLInputElement;
+  const submitTable = () => applyInsertTable(+rowsEl.value || 3, +colsEl.value || 3);
+  for (const el of [rowsEl, colsEl]) {
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); submitTable(); }
+      else if (e.key === "Escape") { e.preventDefault(); closeTableBar(); }
+      e.stopPropagation();
+    });
+  }
+  document.getElementById("tableapply")!.onclick = submitTable;
+  document.getElementById("tableclose")!.onclick = closeTableBar;
 
   const fontcolorEl = document.getElementById("fontcolor") as HTMLInputElement;
   fontcolorEl.addEventListener("change", () => {

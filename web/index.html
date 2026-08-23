@@ -46,10 +46,11 @@
   #toolbar input[type=color] { width: 26px; height: 24px; padding: 1px;
     border: 1px solid #4a4f57; border-radius: 6px; background: #3a3e45; }
   #toolbar label { font-size: 12px; color: #bbb; display: flex; align-items: center; gap: 5px; }
-  #findbar, #linkbar, #commentbar { display: flex; align-items: center; gap: 4px; }
-  #findbar[hidden], #linkbar[hidden], #commentbar[hidden] { display: none; }
-  #findbar input, #linkbar input, #commentbar input { background: #23262b; color: #eee;
-    border: 1px solid #4a4f57; border-radius: 6px; font: inherit; font-size: 13px; padding: 3px 8px; }
+  #findbar, #linkbar, #commentbar, #tablebar { display: flex; align-items: center; gap: 4px; }
+  #findbar[hidden], #linkbar[hidden], #commentbar[hidden], #tablebar[hidden] { display: none; }
+  #findbar input, #linkbar input, #commentbar input, #tablebar input { background: #23262b;
+    color: #eee; border: 1px solid #4a4f57; border-radius: 6px; font: inherit;
+    font-size: 13px; padding: 3px 8px; }
   #findcount { font-size: 12px; color: #9aa0a8; }
 
   /* width:max-content + min-width:100%: pages wider than the viewport
@@ -149,6 +150,7 @@
         <button data-cmd="endnote">미주<kbd>Ctrl+Alt+E</kbd></button>
         <button data-cmd="deleteNote">각주/미주 삭제<kbd>Ctrl+Alt+D</kbd></button>
         <hr>
+        <button data-cmd="insertTable">표…</button>
         <button data-cmd="rowAdd">아래에 행 추가</button>
         <button data-cmd="rowDel">행 삭제</button>
         <button data-cmd="colAdd">오른쪽에 열 추가</button>
@@ -259,6 +261,13 @@
       <button id="linkapply" title="링크 적용 (Enter)">링크</button>
       <button id="linkremove" title="링크 제거">해제</button>
       <button id="linkclose" title="닫기 (Esc)">✕</button>
+    </span>
+    <span id="tablebar" hidden>
+      <span class="sep"></span>
+      <label>행 <input type="number" id="tablerows" min="1" max="50" value="3" style="width:3em"></label>
+      <label>열 <input type="number" id="tablecols" min="1" max="20" value="3" style="width:3em"></label>
+      <button id="tableapply" title="표 삽입 (Enter)">표 삽입</button>
+      <button id="tableclose" title="닫기 (Esc)">✕</button>
     </span>
     <span id="commentbar" hidden>
       <span class="sep"></span>

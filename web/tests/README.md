@@ -8,11 +8,15 @@
 ## 실행 방법
 
 ```bash
+# ⚠ wasm/pkg 재빌드 후에는 반드시 `browse restart` — 데몬
+#   렌더러의 메모리 캐시가 헤더를 무시하고 구 모듈을 서빙함
+#   (transferSize 0으로 진단). 서버는 web/serve.py 권장(no-cache 헤더).
+
 # 0) 앱 빌드 + 서버 (워크스페이스 루트의 web/에서; 한국어 폰트를
 #    web/malgun.ttf로 먼저 복사). 소스는 web/src/*.ts — web/js/는 tsc
 #    산출물이므로 소스 수정 후 반드시 재빌드.
 npm install && npm run build
-python -m http.server 8741
+python serve.py   # (= http.server 8741 + Cache-Control: no-cache)
 
 # 1) 러너 — 전체 배터리 (PASS/FAIL 집계, 실패 시 종료 코드 1)
 bash web/tests/run.sh

@@ -15,7 +15,8 @@ import {
 import {
   alignSelection, applyFontSize, applyFontColor, applyFontFamily,
   styleSelection, tableOp, tabCell, toggleList, setListLevel,
-  applyLineSpacing, mergeCells, splitCell, wireFormat,
+  applyLineSpacing, mergeCells, splitCell, openTableBar, applyInsertTable,
+  wireFormat,
 } from "./format.js";
 import {
   doPaste, insertImageBytes, selectImage, deleteSelectedImage, copySelection,
@@ -247,6 +248,7 @@ window.__t = {
   tableOp,
   mergeCells,
   splitCell,
+  insertTable: (rows: number, cols: number) => { openTableBar(); applyInsertTable(rows, cols); },
   tabCell: (dir: number) => tabCell(S.caret ? S.caret.path : S.sel ? getRun(S.sel.a)?.path ?? null : null, dir),
   setStyle: styleSelection,
   insertImage: insertImageBytes,
