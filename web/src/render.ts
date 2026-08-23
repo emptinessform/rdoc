@@ -7,6 +7,7 @@ import { drawCaret, drawSelection, drawPreedit } from "./view.js";
 import { drawFindHl, refindAfterApply } from "./find.js";
 import { drawCommentHl } from "./comments.js";
 import { updateToolbarState } from "./format.js";
+import { clearCellSel } from "./cellsel.js";
 
 /** The JSON payload every wasm mutation/render returns. */
 interface RenderDelta {
@@ -149,6 +150,7 @@ export function apply(json: string, ms: number) {
                 (dirtyPages.size ? `, ${dirtyPages.size} deferred` : "");
   S.sel = null;
   S.imageSel = null; // page DOM replaced; outline went with it
+  clearCellSel();    // cell geometry may have changed with the layout
   applyZoom();
   drawCaret();
   drawSelection();

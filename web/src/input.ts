@@ -19,6 +19,8 @@ import { openFind, openReplace, closeFind, isFindOpen, findq, replq } from "./fi
 import { imeEl, finalizeComposition } from "./ime.js";
 import { openLinkBar, linkUrlAt } from "./link.js";
 import { commentAtCaret } from "./comments.js";
+import { cellAt } from "./tablegeo.js";
+import { cellSel, setCellSel, clearCellSel } from "./cellsel.js";
 
 function svgPoint(svg: SVGSVGElement, clientX: number, clientY: number) {
   return new DOMPoint(clientX, clientY).matrixTransform(svg.getScreenCTM()!.inverse());
@@ -93,12 +95,39 @@ function collapseSelection(toEnd: boolean) {
   report();
 }
 
+// The (table, row, col) of the drag anchor when it sits in a body cell.
+function anchorCell(): { table: number; row: number; col: number } | null {
+  const run = mouse?.anchor && getRun(mouse.anchor);
+  const m = run?.path?.match(/^d\/(\d+)\.(\d+)\.(\d+)\./);
+  return m ? { table: +m[1], row: +m[2], col: +m[3] } : null;
+}
+
 function extendDragTo(clientX: number, clientY: number) {
   if (!mouse || !mouse.anchor) return;
   const el = document.elementFromPoint(clientX, clientY);
   const svg = ((el && el.closest("svg")) || mouse.svg) as SVGSVGElement;
   const page = [...pagesEl.children].indexOf(svg) + 1;
   const pt = svgPoint(svg, clientX, clientY);
+  // Word/LibreOffice convention: dragging from inside a cell into a
+  // different cell of the same table selects whole cells, not text.
+  const ac = anchorCell();
+  if (ac && page === mouse.page) {
+    const cc = cellAt(page, pt.x, pt.y);
+    if (cc && cc.table === ac.table && (cc.row !== ac.row || cc.col !== ac.col)) {
+      S.sel = null;
+      S.caret = null;
+      drawCaret();
+      drawSelection();
+      setCellSel({
+        page, table: ac.table,
+        r0: Math.min(ac.row, cc.row), r1: Math.max(ac.row, cc.row),
+        c0: Math.min(ac.col, cc.col), c1: Math.max(ac.col, cc.col),
+      });
+      return;
+    }
+    // Back inside the anchor cell: fall through to text selection.
+    if (cellSel()) clearCellSel();
+  }
   const found = findHit(page, pt.x, pt.y);
   if (!found) return;
   S.sel = orderSel(mouse.anchor, { page: found.hit.page, idx: found.hit.id, k: found.k });
@@ -126,6 +155,7 @@ function dragAutoScroll() {
 export function clickAt(page: number, x: number, y: number) {
   finalizeComposition();
   clearImageSel();
+  clearCellSel();
   S.selAnchor = null;
   S.selFocus = null;
   S.sel = null;
@@ -162,6 +192,7 @@ export function wireInput() {
     const svg = target.closest("svg") as SVGSVGElement | null;
     if (!svg) return;
     finalizeComposition();
+    clearCellSel();
     const page = [...pagesEl.children].indexOf(svg) + 1;
     const pt = svgPoint(svg, e.clientX, e.clientY);
     const found = findHit(page, pt.x, pt.y);
@@ -331,6 +362,7 @@ export function wireInput() {
       if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelectedImage(); return; }
       if (e.key === "Escape") { e.preventDefault(); clearImageSel(); report(); return; }
     }
+    if (e.key === "Escape" && clearCellSel()) { e.preventDefault(); report(); return; }
     const ctrl = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
     if (ctrl && !e.altKey && key === "f") { e.preventDefault(); openFind(); return; }

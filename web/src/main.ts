@@ -35,6 +35,7 @@ import {
 } from "./comments.js";
 import { applyLink, removeLink, openLinkBar, wireLink } from "./link.js";
 import { wireColResize } from "./colresize.js";
+import { cellSel, setCellSel, clearCellSel } from "./cellsel.js";
 
 declare global {
   interface Window {
@@ -252,6 +253,10 @@ window.__t = {
   splitCell,
   insertTable: (rows: number, cols: number) => { openTableBar(); applyInsertTable(rows, cols); },
   tableGrid: (p: string) => JSON.parse(S.conv.table_grid_pt(p)),
+  cellSel: () => cellSel(),
+  selectCells: (page: number, table: number, r0: number, c0: number, r1: number, c1: number) =>
+    setCellSel({ page, table, r0, c0, r1, c1 }),
+  clearCellSel: () => clearCellSel(),
   setColWidth: (p: string, col: number, pt: number) => {
     const j = S.conv.set_table_column_width(p, col, pt);
     apply(j, 0);

@@ -5,6 +5,7 @@ import { S, chars, orderSel } from "./state.js";
 import { report } from "./render.js";
 import { drawCaret, drawSelection, selectParaOffsets, refForOffset } from "./view.js";
 import { edit, selRange, selectionRanges, toggleFmt } from "./edit.js";
+import { cellSel, clearCellSel } from "./cellsel.js";
 
 // Paragraph alignment for the caret paragraph or every paragraph the
 // selection touches, as one history entry. Text is unchanged, so the
@@ -275,12 +276,24 @@ export function applyInsertTable(rows: number, cols: number) {
   closeTableBar();
 }
 
-// Merge the adjacent same-row cells a scatter selection covers. The
+// Merge the cells a cell block or a scatter text selection covers. The
 // caret lands in the merged cell; the first cell keeps its path.
 export function mergeCells() {
-  const r = selRange();
-  if (!r || r.kind !== "scatter") { report("병합: 한 행의 인접한 셀들을 선택하세요"); return; }
-  const paths = [...new Set(r.ranges.map((x) => x.path))];
+  const cs = cellSel();
+  let paths: string[];
+  if (cs) {
+    if (cs.r0 !== cs.r1) {
+      report("세로(여러 행) 병합은 아직 미지원 — 한 행의 셀만 선택하세요");
+      return;
+    }
+    paths = [];
+    for (let c = cs.c0; c <= cs.c1; c++) paths.push(`d/${cs.table}.${cs.r0}.${c}.0`);
+    clearCellSel();
+  } else {
+    const r = selRange();
+    if (!r || r.kind !== "scatter") { report("병합: 표에서 셀들을 드래그로 선택하세요"); return; }
+    paths = [...new Set(r.ranges.map((x) => x.path))];
+  }
   const first = paths[0];
   edit(() => {
     const json = S.conv.merge_cells(JSON.stringify(paths));

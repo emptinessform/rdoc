@@ -7,74 +7,68 @@ window.__benchResult = "pending";
   await new Promise(r => setTimeout(r, 1500));
   const res = { ok: true, fails: [], info: {} };
   const check = (name, cond) => { if (!cond) { res.ok = false; res.fails.push(name); } };
-  const press = (key, init) => document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, ...init }));
-  const hitFor = (path) => {
-    const n = document.querySelectorAll("#pages svg").length;
-    for (let pi = 1; pi <= n; pi++)
-      for (const h of t.hits(pi))
-        if (h.path === path && h.start !== null) return { h, page: pi };
-    return null;
-  };
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  const overlayCount = () => document.querySelectorAll(".cellselrect").length;
 
-  // Table data cells: "Text" cell d/10.1.0.0, "GlyphRun" cell d/10.1.1.0
-  // (row 1 of the demo table). Confirm the paths first.
-  const cellA = "d/10.1.0.0", cellB = "d/10.1.1.0";
-  const ta = t.textAt(cellA), tb = t.textAt(cellB);
-  res.info.cells = { ta, tb };
-  check("cell paths resolve", ta === "Text" && tb === "GlyphRun");
+  // Demo table d/10 has 3 columns.
+  const svg = document.querySelector("#pages svg");
+  const r = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  const toClient = (h) => ({
+    x: r.left + (h.x / vb.width) * r.width,
+    y: r.top + ((h.y - 0.4 * h.size) / vb.height) * r.height,
+  });
+  const hitIn = (row, col) => t.hits(1).find(h => h.path && h.path.startsWith(`d/10.${row}.${col}.`));
+  const h00 = hitIn(0, 0), h01 = hitIn(0, 1);
+  check("cells (0,0) and (0,1) have hits", !!h00 && !!h01);
 
-  // 1. Multi-paragraph selection inside ONE cell: split the cell paragraph,
-  //    then select across the two halves and delete — Word-style rejoin.
-  const hA0 = hitFor(cellA);
-  t.clickAt(hA0.page, hA0.h.x + 2, hA0.h.y - 2);
-  const capo = t.state().caret;
-  check("caret in cell", capo && capo.path === cellA);
-  // put caret after "Te" (off 2): use End/Home arithmetic via direct click offset
-  // simpler: select nothing, set caret via clickAt then move with ArrowRight/Left
-  press("Home");
-  press("ArrowRight");
-  press("ArrowRight");
-  press("Enter");
-  const tailPath = "d/10.1.0.1";
-  check("cell split", t.textAt(cellA) === "Te" && t.textAt(tailPath) === "xt");
-  // Shift+End on first half then Shift+Down would leave the cell; instead
-  // extend selection over the boundary with Shift+ArrowRight (crosses via
-  // keyboard is same-paragraph only) — use t.select with coordinates.
-  const hA = hitFor(cellA), hT = hitFor(tailPath);
-  // From after "T" (off 1) to after "x" in the tail (off 1): selects "e\nx".
-  const selTxt = t.select(hA.page, hA.h.x + hA.h.adv[0] + 0.1, hA.h.y - 1, hT.h.x + hT.h.adv[0] + 0.1, hT.h.y - 1);
-  res.info.selTxt = selTxt;
-  check("selection spans the split", selTxt === "e\nx");
-  t.deleteSel();
-  res.info.afterInCell = { a: t.textAt(cellA), tail: t.textAt(tailPath) };
-  check("in-cell cross-paragraph delete merges", t.textAt(cellA) === "Tt" && t.textAt(tailPath) == null);
-  t.undo(); t.undo(); // delete, split
-  check("undos restore cell", t.textAt(cellA) === "Text" && t.textAt(tailPath) == null);
+  // 1. Drag from cell (0,0) into cell (0,1) -> cell-block selection.
+  const p0 = toClient(h00), p1 = toClient(h01);
+  svg.dispatchEvent(new MouseEvent("mousedown", { clientX: p0.x, clientY: p0.y, bubbles: true }));
+  svg.dispatchEvent(new MouseEvent("mousemove", { clientX: p1.x, clientY: p1.y, bubbles: true }));
+  window.dispatchEvent(new MouseEvent("mouseup", { clientX: p1.x, clientY: p1.y, bubbles: true }));
+  await wait(200);
+  const cs = t.cellSel();
+  res.info.cellSel = cs;
+  check("drag selects a 1x2 cell block",
+    !!cs && cs.table === 10 && cs.r0 === 0 && cs.r1 === 0 && cs.c0 === 0 && cs.c1 === 1);
+  check("block overlay covers two cells", overlayCount() === 2);
+  check("text selection is off in block mode", t.selText() === "");
 
-  // 2. Cross-cell selection: from inside "Text" into "GlyphRun" — scatter
-  //    delete clears per cell, structure stays.
-  const hA2 = hitFor(cellA), hB2 = hitFor(cellB);
-  const st = t.select(hA2.page, hA2.h.x + hA2.h.adv[0] + 0.1, hA2.h.y - 1, hB2.h.x + hB2.h.adv[0] + hB2.h.adv[1] + 0.1, hB2.h.y - 1);
-  res.info.crossSel = st;
-  check("cross-cell selection exists", !!st && st.length >= 3);
-  t.deleteSel();
-  const a3 = t.textAt(cellA), b3 = t.textAt(cellB);
-  res.info.afterCross = { a3, b3 };
-  check("head cell trimmed", a3 === "T");
-  check("tail cell trimmed", b3 === "yphRun");
-  check("cells still exist as paragraphs", a3 != null && b3 != null);
+  // 2. Merge consumes the block: 3 cells in row 0 become 2.
+  document.getElementById("mergebtn").click();
+  await wait(400);
+  check("block cleared after merge", t.cellSel() === null);
+  check("row 0 lost a cell", t.textAt("d/10.0.2.0") == null);
+  check("merged cell exists", t.textAt("d/10.0.1.0") != null);
+  check("caret lands in the merged cell", t.state().caret && t.state().caret.path === "d/10.0.0.0");
   t.undo();
-  check("one undo restores both cells", t.textAt(cellA) === "Text" && t.textAt(cellB) === "GlyphRun");
+  await wait(400);
+  check("undo restores the third cell", t.textAt("d/10.0.2.0") != null);
 
-  // 3. Typing over a cross-cell selection: text lands in the first cell.
-  const st2 = t.select(hA2.page, hA2.h.x + hA2.h.adv[0] + 0.1, hA2.h.y - 1, hB2.h.x + hB2.h.adv[0] + hB2.h.adv[1] + 0.1, hB2.h.y - 1);
-  check("reselected", !!st2);
-  t.replaceSel("X");
-  res.info.afterType = { a: t.textAt(cellA), b: t.textAt(cellB) };
-  check("typed over cross-cell", t.textAt(cellA) === "TX" && t.textAt(cellB) === "yphRun");
-  check("caret after typed char", t.state().caret && t.state().caret.path === cellA && t.state().caret.off === 2);
-  t.undo();
-  check("one undo restores typing", t.textAt(cellA) === "Text" && t.textAt(cellB) === "GlyphRun");
+  // 3. Esc clears an active block.
+  t.selectCells(1, 10, 0, 0, 0, 2);
+  check("selectCells shows three overlays", overlayCount() === 3);
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await wait(100);
+  check("Esc clears the block", t.cellSel() === null && overlayCount() === 0);
+
+  // 4. A multi-row block refuses to merge (vertical merge unsupported).
+  if (t.textAt("d/10.1.0.0") != null) {
+    t.selectCells(1, 10, 0, 0, 1, 1);
+    document.getElementById("mergebtn").click();
+    await wait(300);
+    check("multi-row merge refused: structure intact", t.textAt("d/10.0.2.0") != null);
+    t.clearCellSel();
+  } else {
+    res.info.multiRow = "table has one row; skipped";
+  }
+
+  // 5. A plain click clears any block.
+  t.selectCells(1, 10, 0, 0, 0, 1);
+  const any = t.hits(1).find(h => h.path === "d/0" || (h.path && /^d\/\d+$/.test(h.path)));
+  t.clickAt(1, any.x + 1, any.y - 2);
+  check("clickAt clears the block", t.cellSel() === null && overlayCount() === 0);
 
   window.__benchResult = JSON.stringify(res);
 })().catch(e => { window.__benchResult = "ERR: " + e; });

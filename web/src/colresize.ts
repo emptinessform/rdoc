@@ -7,8 +7,8 @@
 import { S } from "./state.js";
 import { pagesEl } from "./render.js";
 import { edit } from "./edit.js";
+import { tableGeom, tablesOnPage } from "./tablegeo.js";
 
-const CELL_PAD_PT = 5.4; // Word's default 108tw left cell margin
 const GRAB_PT = 3;       // half-width of the grab zone around a boundary
 const MIN_COL_PT = 20;
 
@@ -22,52 +22,17 @@ interface Boundary {
   svg: SVGSVGElement;
 }
 
-interface TableGeom {
-  leftPt: number;
-  grid: number[];
-  yTop: number;
-  yBottom: number;
-}
-
-// Table geometry on one page, derived from its cell hits + grid widths.
-function tableGeom(page: number, table: number): TableGeom | null {
-  const prefix = `d/${table}.`;
-  const cells = S.pageHits[page - 1]?.filter((h) => h.path?.startsWith(prefix)) ?? [];
-  if (!cells.length) return null;
-  let grid: number[];
-  try { grid = JSON.parse(S.conv.table_grid_pt(`d/${table}`)); }
-  catch (e) { return null; }
-  if (!grid.length) return null;
-  // Column-0 cells: path "d/T.R.0.P"
-  const col0Cells = cells.filter((h) => new RegExp(`^d/${table}\\.\\d+\\.0\\.`).test(h.path!));
-  if (!col0Cells.length) return null;
-  const leftPt = Math.min(...col0Cells.map((h) => h.x)) - CELL_PAD_PT;
-  const ys = cells.map((h) => h.y);
-  return {
-    leftPt,
-    grid,
-    yTop: Math.min(...ys) - 12,
-    yBottom: Math.max(...ys) + 6,
-  };
-}
-
 function boundaryAt(clientX: number, clientY: number): Boundary | null {
   const el = document.elementFromPoint(clientX, clientY);
   const svg = el && (el.closest("svg") as SVGSVGElement | null);
   if (!svg || !pagesEl.contains(svg)) return null;
   const page = [...pagesEl.children].indexOf(svg) + 1;
   const pt = new DOMPoint(clientX, clientY).matrixTransform(svg.getScreenCTM()!.inverse());
-  const tables = new Set<number>();
-  for (const h of S.pageHits[page - 1] ?? []) {
-    const m = h.path?.match(/^d\/(\d+)\.\d+\.\d+\./);
-    if (m) tables.add(+m[1]);
-  }
-  for (const table of tables) {
+  for (const table of tablesOnPage(page)) {
     const g = tableGeom(page, table);
     if (!g || pt.y < g.yTop || pt.y > g.yBottom) continue;
-    let x = g.leftPt;
     for (let c = 0; c < g.grid.length; c++) {
-      x += g.grid[c];
+      const x = g.colX[c + 1];
       if (Math.abs(pt.x - x) <= GRAB_PT) {
         return { table, col: c, xPt: x, yTop: g.yTop, yBottom: g.yBottom, page, svg };
       }
