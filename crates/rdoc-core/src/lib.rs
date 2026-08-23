@@ -156,6 +156,10 @@ pub struct HitRun {
 struct FaceInfo<'a> {
     face: ttf_parser::Face<'a>,
     units_per_em: f64,
+    /// What the face actually is (OS/2), as opposed to what a run asked
+    /// for — the gap is bridged with synthetic bold/italic at render time.
+    bold: bool,
+    italic: bool,
 }
 
 pub struct SvgRenderer<'a> {
@@ -182,7 +186,16 @@ impl<'a> SvgRenderer<'a> {
             match ttf_parser::Face::parse(&fd.data, fd.face_index) {
                 Ok(face) => {
                     let units_per_em = face.units_per_em() as f64;
-                    faces.insert(fd.id.0, FaceInfo { face, units_per_em });
+                    let (bold, italic) = (face.is_bold(), face.is_italic());
+                    faces.insert(
+                        fd.id.0,
+                        FaceInfo {
+                            face,
+                            units_per_em,
+                            bold,
+                            italic,
+                        },
+                    );
                 }
                 Err(_) => {}
             }
@@ -471,13 +484,29 @@ impl<'a> SvgRenderer<'a> {
             return;
         };
         let scale = run.font_size / info.units_per_em;
+        // The resolved face may lack the requested style (Korean fonts
+        // rarely ship italic; the open-font set may lack a bold weight):
+        // synthesize like Word does — stroke-thickened outlines for bold,
+        // a baseline skew for italic. Advances are left untouched.
+        let synth_bold = run.bold && !info.bold;
+        let synth_italic = run.italic && !info.italic;
+        let stroke = if synth_bold {
+            format!(
+                r#" stroke="{}" stroke-width="{}""#,
+                rgb(&run.color),
+                f(run.font_size * 0.03)
+            )
+        } else {
+            String::new()
+        };
         let _ = writeln!(
             out,
-            r#"<g data-hit="{}{hit_id}" fill="{}"{}>"#,
+            r#"<g data-hit="{}{hit_id}" fill="{}"{}{stroke}>"#,
             self.prefix,
             rgb(&run.color),
             opacity_attr("fill-opacity", &run.color)
         );
+        let skew = if synth_italic { " skewX(-12)" } else { "" };
         let mut pen_x = run.origin.x;
         for (i, gid) in run.glyph_ids.iter().enumerate() {
             if let Some(def) = glyph_def(
@@ -489,7 +518,7 @@ impl<'a> SvgRenderer<'a> {
             ) {
                 let _ = writeln!(
                     out,
-                    r##"<use href="#{}g{def}" transform="translate({} {}) scale({} {})"/>"##,
+                    r##"<use href="#{}g{def}" transform="translate({} {}){skew} scale({} {})"/>"##,
                     self.prefix,
                     f(pen_x),
                     f(run.origin.y),

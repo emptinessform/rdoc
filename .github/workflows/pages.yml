@@ -43,8 +43,12 @@ jobs:
           cp -r web/js web/pkg site/
           curl -fsSL -o site/fonts/Pretendard-Regular.otf \
             https://github.com/orioncactus/pretendard/raw/main/packages/pretendard/dist/public/static/Pretendard-Regular.otf
+          curl -fsSL -o site/fonts/Pretendard-Bold.otf \
+            https://github.com/orioncactus/pretendard/raw/main/packages/pretendard/dist/public/static/Pretendard-Bold.otf
           curl -fsSL -o site/fonts/NanumMyeongjo-Regular.ttf \
             https://github.com/google/fonts/raw/main/ofl/nanummyeongjo/NanumMyeongjo-Regular.ttf
+          curl -fsSL -o site/fonts/NanumMyeongjo-Bold.ttf \
+            https://github.com/google/fonts/raw/main/ofl/nanummyeongjo/NanumMyeongjo-Bold.ttf
       - uses: actions/configure-pages@v5
         with:
           enablement: true

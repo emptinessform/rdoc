@@ -60,6 +60,45 @@ window.__benchResult = "pending";
   t.undo();
   check("scatter undo", t.fmtOn(r3, "i") === false);
 
+  // 5. Bold/italic are VISIBLE, not just stored: the rendered group must
+  // change — a real bold/italic face gives different glyph refs; a font
+  // without one gets synthetic rendering (stroke for bold, skewX for
+  // italic). Korean text, so this guards the open-font/malgun setups.
+  const gAt = (pp, off) => {
+    for (let pi = 1; pi <= 2; pi++)
+      for (const h of t.hits(pi))
+        if (h.path === pp && h.start !== null && off >= h.start && off < h.start + h.adv.length) {
+          const g = document.querySelectorAll("#pages svg")[pi - 1]
+            .querySelector(`[data-hit="pg${pi}-${h.id}"]`);
+          const u = g && g.querySelector("use");
+          return g && {
+            stroke: g.getAttribute("stroke"),
+            href: u && u.getAttribute("href"),
+            tf: (u && u.getAttribute("transform")) || "",
+          };
+        }
+    return null;
+  };
+  t.clickAt(1, 150, 200);
+  const vp = t.state().caret.path, voff = t.state().caret.off;
+  const plain = gAt(vp, voff);
+  for (let i = 0; i < 3; i++) press("ArrowRight", { shiftKey: true });
+  press("b", { ctrlKey: true });
+  await new Promise(rs => setTimeout(rs, 300));
+  const bolded = gAt(vp, voff);
+  res.info.visual = { plain, bolded };
+  check("bold is visible", bolded && (bolded.stroke !== null || bolded.href !== plain.href));
+  t.undo();
+  t.clickAt(1, 150, 200);
+  for (let i = 0; i < 3; i++) press("ArrowRight", { shiftKey: true });
+  press("i", { ctrlKey: true });
+  await new Promise(rs => setTimeout(rs, 300));
+  const italicized = gAt(vp, voff);
+  res.info.visual.italicized = italicized;
+  check("italic is visible", italicized &&
+    (italicized.tf.includes("skewX") || italicized.href !== plain.href));
+  t.undo();
+
   window.__benchResult = JSON.stringify(res);
 })().catch(e => { window.__benchResult = "ERR: " + e; });
 "started"

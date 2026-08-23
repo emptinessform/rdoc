@@ -61,10 +61,16 @@ const SERIF_ALIASES = [
   // Script faces have no open equivalent; a serif is the closest class.
   "궁서", "Gungsuh", "궁서체", "GungsuhChe",
 ];
+// Bold weights ride along under the same family name — fontdb reads the
+// actual weight from each file, so bold runs resolve to the real bold
+// face; styles with no face (e.g. Korean italic) get synthetic rendering
+// in the SVG backend.
 const FONT_SOURCES = [
   { url: "./malgun.ttf", family: "Malgun Gothic" },
   { url: "./fonts/Pretendard-Regular.otf", family: "Pretendard" },
+  { url: "./fonts/Pretendard-Bold.otf", family: "Pretendard" },
   { url: "./fonts/NanumMyeongjo-Regular.ttf", family: "NanumMyeongjo" },
+  { url: "./fonts/NanumMyeongjo-Bold.ttf", family: "NanumMyeongjo" },
 ];
 async function loadFonts() {
   const fetched = await Promise.all(FONT_SOURCES.map(async (src) => {
