@@ -922,6 +922,11 @@ pub struct RenderCache {
 }
 
 impl RenderCache {
+    /// Pages in the most recently rendered layout (0 before any render).
+    pub fn page_count(&self) -> usize {
+        self.element_hashes.len()
+    }
+
     pub fn clear(&mut self) {
         self.element_hashes.clear();
         self.hit_hashes.clear();

@@ -249,6 +249,7 @@ window.__t = {
   trackChanges: (on: boolean) => toggleTrackedView(on),
   hasRevisions: () => S.conv.has_revisions(),
   toggleComments: (on?: boolean) => toggleComments(on),
+  docStats: () => JSON.parse(S.conv.doc_stats()),
   acceptAll: () => { const j = S.conv.accept_all_revisions(); apply(j, 0); },
   rejectAll: () => { const j = S.conv.reject_all_revisions(); apply(j, 0); },
   commentList: () => JSON.parse(S.conv.comment_list()),

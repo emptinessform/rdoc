@@ -44,6 +44,12 @@ function pageOp(fn: () => string) {
 
 const COMMANDS: Record<string, () => void> = {
   openFile: () => (document.getElementById("file") as HTMLInputElement).click(),
+  docStats: () => {
+    try {
+      const st = JSON.parse(S.conv.doc_stats());
+      report(`페이지 ${st.pages} · 문단 ${st.paragraphs} · 단어 ${st.words} · 문자 ${st.chars} (공백 제외 ${st.chars_no_space})`);
+    } catch (e) { report("문서를 먼저 여세요"); }
+  },
   paperA4: () => pageOp(() => S.conv.set_paper(595.3, 841.9)),
   paperLetter: () => pageOp(() => S.conv.set_paper(612, 792)),
   paperLegal: () => pageOp(() => S.conv.set_paper(612, 1008)),

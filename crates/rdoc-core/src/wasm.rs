@@ -555,6 +555,46 @@ impl SvgConverter {
         )
     }
 
+    /// Body-story statistics as JSON:
+    /// `{"pages","paragraphs","words","chars","chars_no_space"}`.
+    /// Pages come from the most recent render; text counts walk the body
+    /// (tables included via their cell paragraphs). Read-only.
+    pub fn doc_stats(&mut self) -> Result<String, JsValue> {
+        let doc = self.doc.as_ref().ok_or_else(|| err("no document loaded"))?;
+        let mut paragraphs = 0usize;
+        let mut words = 0usize;
+        let mut chars = 0usize;
+        let mut chars_no_space = 0usize;
+        let mut count_text = |text: &str| {
+            words += text.split_whitespace().count();
+            chars += text.chars().count();
+            chars_no_space += text.chars().filter(|c| !c.is_whitespace()).count();
+        };
+        for item in doc.body_items() {
+            match item {
+                rdocx::BodyItemRef::Paragraph(p) => {
+                    paragraphs += 1;
+                    count_text(&p.text());
+                }
+                rdocx::BodyItemRef::Table(t) => {
+                    for r in 0..t.row_count() {
+                        for c in 0..t.column_count() {
+                            let Some(cell) = t.cell(r, c) else { continue };
+                            let text = cell.text();
+                            paragraphs += text.lines().count().max(1);
+                            count_text(&text);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(format!(
+            r#"{{"pages":{},"paragraphs":{paragraphs},"words":{words},"chars":{chars},"chars_no_space":{chars_no_space}}}"#,
+            self.cache.page_count(),
+        ))
+    }
+
     /// The document's comments as JSON
     /// `[{"id","author","text","resolved"}]`. Read-only.
     pub fn comment_list(&mut self) -> Result<String, JsValue> {
