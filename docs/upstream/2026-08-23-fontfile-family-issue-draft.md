@@ -1,7 +1,7 @@
 # 업스트림 이슈 초안 (tensorbee/rdocx — 새 이슈)
 
-> 상태: **초안 (미게시)** — 사용자 승인 후 게시. 게시 시 포크 커밋
-> 730f372 / 7d821d8 링크를 확인할 것 (svg-poc-0.8).
+> 상태: **게시됨** — https://github.com/tensorbee/rdocx/issues/44
+> (2026-08-23, 사용자 승인).
 
 **Title:** FontFile.family is silently ignored — caller-provided fonts
 can't serve document-facing family names
