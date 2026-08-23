@@ -1,6 +1,9 @@
 # rdoc
 
-**서버 없이 브라우저에서 도는 경량 Rust/wasm DOCX 뷰어·에디터** (개발 초기 단계)
+**서버 없이 브라우저에서 도는 경량 Rust/wasm DOCX 뷰어·에디터**
+
+**[온라인 데모](https://emptinessform.github.io/rdoc/)** (개발 프리뷰 —
+main 푸시마다 자동 배포, 한국어 폰트는 Pretendard)
 
 [rhwp](https://github.com/edwardkim/rhwp)("모두의 한글")가 HWP에서 증명한 것을
 DOCX에서 재현하는 프로젝트입니다. 차이점: DOCX는 파서·레이아웃 엔진이

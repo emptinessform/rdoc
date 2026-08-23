@@ -4,7 +4,9 @@ corpus/*.docx
 web/pkg/
 web/*.png
 web/demo.docx
-# Proprietary font — copy locally, never commit (see README)
+# Fonts — never committed: malgun.ttf is MS-licensed; the free demo font
+# is downloaded by the Pages workflow (and locally for testing)
 web/malgun.ttf
+web/fonts/
 *.pdb
 .gstack/

@@ -29,10 +29,28 @@ import { clickAt, wireInput } from "./input.js";
 
 await init();
 S.conv = new SvgConverter();
-try {
-  const buf = await (await fetch("./malgun.ttf")).arrayBuffer();
-  S.conv.add_font("Malgun Gothic", new Uint8Array(buf));
-} catch (e) { /* Korean falls back to bundled fonts */ }
+
+// Korean font, first one that loads wins: a locally provided malgun.ttf
+// (dev convenience — MS license, never in the repo), else the free demo
+// font the Pages deploy ships (Pretendard, SIL OFL), registered under
+// the common family names so typical Korean documents resolve to it.
+// If neither loads, rdocx's bundled fallback fonts take over.
+async function addFirstFont(sources) {
+  for (const [families, url] of sources) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      for (const f of families) S.conv.add_font(f, bytes);
+      return url;
+    } catch (e) { /* try the next source */ }
+  }
+  return null;
+}
+await addFirstFont([
+  [["Malgun Gothic"], "./malgun.ttf"],
+  [["Pretendard", "Malgun Gothic", "맑은 고딕"], "./fonts/Pretendard-Regular.otf"],
+]);
 status("ready — load the demo or open a .docx");
 
 wireRender();
@@ -69,10 +87,15 @@ document.getElementById("save").onclick = () => {
 
 document.getElementById("file").onchange = async (e) => {
   const f = e.target.files[0];
+  e.target.value = "";
   if (!f) return;
-  S.conv.load_docx(new Uint8Array(await f.arrayBuffer()));
-  const t = performance.now();
-  apply(S.conv.render(), performance.now() - t);
+  try {
+    S.conv.load_docx(new Uint8Array(await f.arrayBuffer()));
+    const t = performance.now();
+    apply(S.conv.render(), performance.now() - t);
+  } catch (err) {
+    status(`열기 실패: ${f.name} — ${err}`);
+  }
 };
 
 // Deterministic hooks for automated testing.
