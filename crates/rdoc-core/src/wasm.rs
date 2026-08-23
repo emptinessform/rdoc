@@ -578,6 +578,71 @@ impl SvgConverter {
         serde_json::to_string(&fmt).map_err(err)
     }
 
+    /// Toggle bullet/numbered list membership over whole paragraphs (JSON
+    /// array of hit paths), as one history entry. Word semantics: if every
+    /// paragraph is already a list of the requested kind, the list is
+    /// removed; otherwise all become that kind (levels preserved).
+    pub fn toggle_list_paths(&mut self, json: &str, bullet: bool) -> Result<String, JsValue> {
+        let paths: Vec<String> =
+            serde_json::from_str(json).map_err(|_| err("bad paths json"))?;
+        let ats: Vec<crate::EditPath> = paths
+            .iter()
+            .map(|p| parse_edit_path(p).ok_or_else(|| err("not an editable location")))
+            .collect::<Result<_, _>>()?;
+        self.mutate(
+            move |d| {
+                let all_on = ats.iter().all(|at| {
+                    crate::list_numbering_at(d, at)
+                        .map(|(num_id, _)| d.numbering_is_bullet(num_id) == Some(bullet))
+                        .unwrap_or(false)
+                });
+                if all_on {
+                    return ats.iter().all(|at| crate::set_list_at(d, at, None));
+                }
+                let num_id = d.ensure_list_num(bullet);
+                ats.iter().all(|at| {
+                    let level = crate::list_numbering_at(d, at).map(|(_, l)| l).unwrap_or(0);
+                    crate::set_list_at(d, at, Some((num_id, level)))
+                })
+            },
+            "list",
+        )
+    }
+
+    /// The paragraph's list state as JSON `{"bullet":bool,"level":n}`, or
+    /// `"null"` when it is not a list paragraph. Read-only.
+    pub fn list_info(&mut self, path: &str) -> Result<String, JsValue> {
+        let Some(at) = parse_edit_path(path) else {
+            return Err(err("not an editable location"));
+        };
+        let doc = self.doc.as_mut().ok_or_else(|| err("no document loaded"))?;
+        match crate::list_numbering_at(doc, &at) {
+            Some((num_id, level)) => {
+                let bullet = doc.numbering_is_bullet(num_id).unwrap_or(true);
+                Ok(format!(r#"{{"bullet":{bullet},"level":{level}}}"#))
+            }
+            None => Ok("null".to_string()),
+        }
+    }
+
+    /// Change a list paragraph's indentation level by `delta` (clamped to
+    /// 0..=8), one history entry. Errors when the paragraph is not a list.
+    pub fn set_list_level(&mut self, path: &str, delta: i32) -> Result<String, JsValue> {
+        let Some(at) = parse_edit_path(path) else {
+            return Err(err("not an editable location"));
+        };
+        self.mutate(
+            move |d| match crate::list_numbering_at(d, &at) {
+                Some((num_id, level)) => {
+                    let new_level = (level as i32 + delta).clamp(0, 8) as u32;
+                    crate::set_list_at(d, &at, Some((num_id, new_level)))
+                }
+                None => false,
+            },
+            "list level",
+        )
+    }
+
     /// Set the font family over per-paragraph ranges, as one history entry.
     pub fn set_family_ranges(&mut self, json: &str, family: &str) -> Result<String, JsValue> {
         let ranges = Self::parse_ranges(json)?;

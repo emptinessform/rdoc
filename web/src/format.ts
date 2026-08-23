@@ -93,6 +93,54 @@ export function styleSelection(styleId: string) {
   });
 }
 
+// Bullet/numbered list toggle over the caret paragraph or every
+// paragraph the selection touches. Word semantics live in wasm
+// (all-on removes, mixed sets). Toggling adds/removes marker hits and
+// shifts indents, so selection refs go stale — collapse to a caret
+// (kept in place when there was one; text offsets are unchanged).
+export function toggleList(kind: "bullet" | "number") {
+  let paths: string[] = [];
+  let fallback: { path: string; off: number } | null = null;
+  const r = selRange();
+  if (r && r.kind === "scatter") {
+    paths = [...new Set(r.ranges.map((x) => x.path))];
+    fallback = { path: r.ranges[0].path, off: r.ranges[0].start };
+  } else if (r && r.kind === "siblings") {
+    const idx = (pp: string) => +pp.match(/(\d+)$/)![1];
+    for (let i = idx(r.pa); i <= idx(r.pb); i++) paths.push(r.pa.replace(/\d+$/, String(i)));
+    fallback = { path: r.pa, off: r.oa };
+  } else if (r) {
+    paths = [r.pa];
+    fallback = { path: r.pa, off: r.oa };
+  } else if (S.caret) paths = [S.caret.path];
+  if (!paths.length) { report("목록: 캐럿을 두거나 선택하세요"); return; }
+  const keep = S.caret ? { ...S.caret } : fallback;
+  edit(() => {
+    const json = S.conv.toggle_list_paths(JSON.stringify(paths), kind === "bullet");
+    S.caret = keep;
+    S.sel = null;
+    return json;
+  });
+}
+
+// Indent/outdent the caret's list paragraph (Tab / Shift+Tab). Returns
+// false when the caret is not in a list paragraph, so the caller can
+// let other Tab behaviors run.
+export function setListLevel(delta: number): boolean {
+  const c = S.caret;
+  if (!c) return false;
+  try {
+    if (S.conv.list_info(c.path) === "null") return false;
+  } catch (e) { return false; }
+  const keep = { ...c };
+  edit(() => {
+    const json = S.conv.set_list_level(keep.path, delta);
+    S.caret = keep;
+    return json;
+  });
+  return true;
+}
+
 /// Direct run formatting reported by wasm caret_format.
 interface CaretFormat {
   bold: boolean;
@@ -133,6 +181,17 @@ export function updateToolbarState() {
   document.querySelectorAll<HTMLButtonElement>("#fmtbtns button").forEach((b) => {
     const key = b.dataset.fmt as "b" | "i" | "u";
     b.classList.toggle("on", !!(biu && biu[key]));
+  });
+  let list: { bullet: boolean; level: number } | null = null;
+  try {
+    const p = S.caret ? S.caret.path : selectionRanges()?.[0]?.path ?? null;
+    if (p) {
+      const j = S.conv.list_info(p);
+      list = j === "null" ? null : JSON.parse(j);
+    }
+  } catch (e) { /* not an editable spot */ }
+  document.querySelectorAll<HTMLButtonElement>("#listbtns button").forEach((b) => {
+    b.classList.toggle("on", !!list && (b.dataset.list === "bullet") === list.bullet);
   });
   const sizeEl = document.getElementById("fontsize") as HTMLInputElement;
   if (document.activeElement !== sizeEl) {
@@ -211,6 +270,10 @@ export function wireFormat() {
 
   document.querySelectorAll<HTMLButtonElement>("#alignbtns button").forEach((b) => {
     b.onclick = () => alignSelection(b.dataset.align!);
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("#listbtns button").forEach((b) => {
+    b.onclick = () => toggleList(b.dataset.list as "bullet" | "number");
   });
 
   document.querySelectorAll<HTMLButtonElement>("#tblbtns button").forEach((b) => {

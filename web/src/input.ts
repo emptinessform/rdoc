@@ -13,7 +13,7 @@ import {
   mergePrev, forwardDelete, toggleFmt, insertFootnote, insertEndnote,
   deleteNote, doUndo, doRedo, caretToLineEdge, selectAll, moveCaretLine,
 } from "./edit.js";
-import { alignSelection, tabCell } from "./format.js";
+import { alignSelection, tabCell, setListLevel } from "./format.js";
 import { copySelection, cutSelection, clearImageSel, selectImage, deleteSelectedImage } from "./clipboard.js";
 import { openFind, openReplace, closeFind, isFindOpen, findq, replq } from "./find.js";
 import { imeEl, finalizeComposition } from "./ime.js";
@@ -268,6 +268,11 @@ export function wireInput() {
       if (pos && /^d\/\d+\.\d+\.\d+\.\d+$/.test(pos)) {
         e.preventDefault();
         tabCell(pos, e.shiftKey ? -1 : 1);
+        return;
+      }
+      // Outside tables: Tab/Shift+Tab changes a list paragraph's level.
+      if (setListLevel(e.shiftKey ? -1 : 1)) {
+        e.preventDefault();
         return;
       }
     }

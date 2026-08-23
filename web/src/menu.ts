@@ -10,7 +10,7 @@ import {
 } from "./edit.js";
 import { copySelection, cutSelection, doPaste } from "./clipboard.js";
 import { openFind, openReplace } from "./find.js";
-import { alignSelection, tableOp } from "./format.js";
+import { alignSelection, tableOp, toggleList } from "./format.js";
 
 const COMMANDS: Record<string, () => void> = {
   openFile: () => (document.getElementById("file") as HTMLInputElement).click(),
@@ -36,6 +36,8 @@ const COMMANDS: Record<string, () => void> = {
   alignL: () => alignSelection("l"),
   alignC: () => alignSelection("c"),
   alignR: () => alignSelection("r"),
+  listBullet: () => toggleList("bullet"),
+  listNumber: () => toggleList("number"),
   rowAdd: () => tableOp("r"),
   rowDel: () => tableOp("R"),
   colAdd: () => tableOp("c"),

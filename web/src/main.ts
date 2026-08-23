@@ -14,7 +14,7 @@ import {
 } from "./edit.js";
 import {
   alignSelection, applyFontSize, applyFontColor, applyFontFamily,
-  styleSelection, tableOp, tabCell, wireFormat,
+  styleSelection, tableOp, tabCell, toggleList, setListLevel, wireFormat,
 } from "./format.js";
 import {
   doPaste, insertImageBytes, selectImage, deleteSelectedImage, copySelection,
@@ -235,6 +235,9 @@ window.__t = {
   fontSize: applyFontSize,
   fontColor: applyFontColor,
   fontFamily: applyFontFamily,
+  toggleList,
+  listLevel: setListLevel,
+  listInfo: (p: string) => S.conv.list_info(p),
   fmtOn: (ranges: unknown, f: string) => S.conv.ranges_format_on(JSON.stringify(ranges), f),
   thumbs: thumbsState,
   toggleThumbs: () => document.getElementById("thumbtoggle")!.click(),

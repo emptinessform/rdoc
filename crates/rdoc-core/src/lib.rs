@@ -2192,6 +2192,20 @@ pub fn set_style_at(doc: &mut Document, at: &EditPath, style_id: &str) -> bool {
     with_paragraph_at(doc, at, |p| p.set_style(style_id)).is_some()
 }
 
+/// The paragraph's list membership: (numId, level), or None.
+pub fn list_numbering_at(doc: &mut Document, at: &EditPath) -> Option<(u32, u32)> {
+    with_paragraph_at(doc, at, |p| p.numbering_value()).flatten()
+}
+
+/// Set or clear a paragraph's list membership at any editable location.
+pub fn set_list_at(doc: &mut Document, at: &EditPath, numbering: Option<(u32, u32)>) -> bool {
+    with_paragraph_at(doc, at, |p| {
+        p.set_numbering_value(numbering);
+        true
+    })
+    .unwrap_or(false)
+}
+
 /// Set the text color (6-digit hex, no '#') over [start, end) of one
 /// paragraph, splitting runs at the range boundaries like set_size_in.
 fn set_color_in(p: &mut rdocx::Paragraph<'_>, start: usize, end: usize, hex: &str) -> bool {
