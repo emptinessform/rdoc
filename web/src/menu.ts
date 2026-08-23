@@ -11,6 +11,7 @@ import {
 import { copySelection, cutSelection, doPaste } from "./clipboard.js";
 import { openFind, openReplace } from "./find.js";
 import { alignSelection, tableOp, toggleList } from "./format.js";
+import { openLinkBar, removeLink } from "./link.js";
 
 const COMMANDS: Record<string, () => void> = {
   openFile: () => (document.getElementById("file") as HTMLInputElement).click(),
@@ -27,6 +28,8 @@ const COMMANDS: Record<string, () => void> = {
   selectAll,
   find: openFind,
   replace: openReplace,
+  link: openLinkBar,
+  unlink: removeLink,
   footnote: insertFootnote,
   endnote: insertEndnote,
   deleteNote,

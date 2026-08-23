@@ -578,6 +578,53 @@ impl SvgConverter {
         serde_json::to_string(&fmt).map_err(err)
     }
 
+    /// Wrap [start, end) of a body paragraph in an external hyperlink,
+    /// with Word's default link look, as one history entry. Body story
+    /// only: the relationship lives in the document part's rels.
+    pub fn set_hyperlink(
+        &mut self,
+        path: &str,
+        start: usize,
+        end: usize,
+        url: &str,
+    ) -> Result<String, JsValue> {
+        if !path.starts_with("d/") {
+            return Err(err("hyperlinks are supported in the body story only"));
+        }
+        let Some(at) = parse_edit_path(path) else {
+            return Err(err("not an editable location"));
+        };
+        let url = url.to_owned();
+        self.mutate(
+            move |d| {
+                let rel = d.add_hyperlink_relationship(&url);
+                crate::set_hyperlink_at(d, &at, start, end, &rel)
+            },
+            "hyperlink",
+        )
+    }
+
+    /// The hyperlink URL covering a char offset, or None. Read-only.
+    pub fn hyperlink_at(&mut self, path: &str, off: usize) -> Result<Option<String>, JsValue> {
+        let Some(at) = parse_edit_path(path) else {
+            return Err(err("not an editable location"));
+        };
+        let doc = self.doc.as_mut().ok_or_else(|| err("no document loaded"))?;
+        let Some(rel) = crate::hyperlink_rel_at(doc, &at, off) else {
+            return Ok(None);
+        };
+        Ok(doc.hyperlink_url(&rel))
+    }
+
+    /// Remove the hyperlink covering a char offset (text and formatting
+    /// cleanup included), as one history entry.
+    pub fn remove_hyperlink(&mut self, path: &str, off: usize) -> Result<String, JsValue> {
+        let Some(at) = parse_edit_path(path) else {
+            return Err(err("not an editable location"));
+        };
+        self.mutate(move |d| crate::remove_hyperlink_at(d, &at, off), "unlink")
+    }
+
     /// Toggle bullet/numbered list membership over whole paragraphs (JSON
     /// array of hit paths), as one history entry. Word semantics: if every
     /// paragraph is already a list of the requested kind, the list is

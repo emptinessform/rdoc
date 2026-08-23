@@ -27,6 +27,7 @@ import {
 import { imeEl, wireIme } from "./ime.js";
 import { clickAt, wireInput } from "./input.js";
 import { wireMenu } from "./menu.js";
+import { applyLink, removeLink, openLinkBar, wireLink } from "./link.js";
 
 declare global {
   interface Window {
@@ -110,6 +111,7 @@ wireFormat();
 wireIme();
 wireInput();
 wireMenu();
+wireLink();
 
 // ---- load ------------------------------------------------------------------
 
@@ -238,6 +240,10 @@ window.__t = {
   toggleList,
   listLevel: setListLevel,
   listInfo: (p: string) => S.conv.list_info(p),
+  openLink: openLinkBar,
+  setLink: applyLink,
+  removeLink,
+  linkAt: (p: string, o: number) => S.conv.hyperlink_at(p, o) ?? null,
   fmtOn: (ranges: unknown, f: string) => S.conv.ranges_format_on(JSON.stringify(ranges), f),
   thumbs: thumbsState,
   toggleThumbs: () => document.getElementById("thumbtoggle")!.click(),

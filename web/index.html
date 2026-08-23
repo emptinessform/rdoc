@@ -39,9 +39,9 @@
   #toolbar input[type=color] { width: 26px; height: 24px; padding: 1px;
     border: 1px solid #4a4f57; border-radius: 6px; background: #3a3e45; }
   #toolbar label { font-size: 12px; color: #bbb; display: flex; align-items: center; gap: 5px; }
-  #findbar { display: flex; align-items: center; gap: 4px; }
-  #findbar[hidden] { display: none; }
-  #findbar input { background: #23262b; color: #eee; border: 1px solid #4a4f57;
+  #findbar, #linkbar { display: flex; align-items: center; gap: 4px; }
+  #findbar[hidden], #linkbar[hidden] { display: none; }
+  #findbar input, #linkbar input { background: #23262b; color: #eee; border: 1px solid #4a4f57;
     border-radius: 6px; font: inherit; font-size: 13px; padding: 3px 8px; }
   #findcount { font-size: 12px; color: #9aa0a8; }
 
@@ -89,6 +89,8 @@
       <button class="mtitle">삽입</button>
       <div class="mlist">
         <button data-cmd="insertImage">이미지…</button>
+        <button data-cmd="link">하이퍼링크…<kbd>Ctrl+K</kbd></button>
+        <button data-cmd="unlink">링크 제거</button>
         <hr>
         <button data-cmd="footnote">각주<kbd>Ctrl+Alt+F</kbd></button>
         <button data-cmd="endnote">미주<kbd>Ctrl+Alt+E</kbd></button>
@@ -178,6 +180,13 @@
       <option value="1.5">150%</option>
       <option value="2">200%</option>
     </select></label>
+    <span id="linkbar" hidden>
+      <span class="sep"></span>
+      <input id="linkq" placeholder="https://…" autocomplete="off" size="24">
+      <button id="linkapply" title="링크 적용 (Enter)">링크</button>
+      <button id="linkremove" title="링크 제거">해제</button>
+      <button id="linkclose" title="닫기 (Esc)">✕</button>
+    </span>
     <span id="findbar" hidden>
       <span class="sep"></span>
       <input id="findq" placeholder="찾기" autocomplete="off" size="14">

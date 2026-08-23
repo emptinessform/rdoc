@@ -99,6 +99,7 @@ export function wireClipboard() {
 
   document.addEventListener("paste", async (e) => {
     if (e.target === findq || e.target === replq) return;
+    if ((e.target as HTMLElement)?.id === "linkq") return;
     const img = e.clipboardData && [...(e.clipboardData.files || [])].find((f) => f.type.startsWith("image/"));
     if (img) {
       e.preventDefault();

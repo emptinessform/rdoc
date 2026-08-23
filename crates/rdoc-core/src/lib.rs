@@ -2192,6 +2192,117 @@ pub fn set_style_at(doc: &mut Document, at: &EditPath, style_id: &str) -> bool {
     with_paragraph_at(doc, at, |p| p.set_style(style_id)).is_some()
 }
 
+/// Char-offset extents of each hyperlink span in one paragraph, as
+/// (span_index, char_start, char_end, rel_id).
+fn hyperlink_extents(p: &rdocx::Paragraph<'_>) -> Vec<(usize, usize, usize, Option<String>)> {
+    let mut run_offsets = Vec::with_capacity(p.run_count() + 1);
+    let mut acc = 0usize;
+    run_offsets.push(0);
+    for j in 0..p.run_count() {
+        acc += p.run(j).map(|r| r.text().chars().count()).unwrap_or(0);
+        run_offsets.push(acc);
+    }
+    p.hyperlink_spans_value()
+        .into_iter()
+        .enumerate()
+        .map(|(i, (rs, re, rel))| {
+            let cs = run_offsets.get(rs).copied().unwrap_or(acc);
+            let ce = run_offsets.get(re).copied().unwrap_or(acc);
+            (i, cs, ce, rel)
+        })
+        .collect()
+}
+
+/// The hyperlink rel id covering a char offset, if any. The caller
+/// resolves it to a URL with `Document::hyperlink_url`.
+pub fn hyperlink_rel_at(doc: &mut Document, at: &EditPath, off: usize) -> Option<String> {
+    with_paragraph_at(doc, at, |p| {
+        hyperlink_extents(p)
+            .into_iter()
+            .find(|(_, cs, ce, _)| off >= *cs && off < *ce)
+            .and_then(|(_, _, _, rel)| rel)
+    })
+    .flatten()
+}
+
+/// Wrap [start, end) in a hyperlink (splitting runs at the boundaries)
+/// and give it Word's default link look (blue + underline).
+pub fn set_hyperlink_at(
+    doc: &mut Document,
+    at: &EditPath,
+    start: usize,
+    end: usize,
+    rel_id: &str,
+) -> bool {
+    if end <= start {
+        return false;
+    }
+    let rel_id = rel_id.to_owned();
+    with_paragraph_at(doc, at, move |p| {
+        let (j2, o2) = locate(p, end);
+        p.split_run(j2, o2);
+        let (j1, o1) = locate(p, start);
+        p.split_run(j1, o1);
+        let mut acc = 0usize;
+        let mut first: Option<usize> = None;
+        let mut last = 0usize;
+        for j in 0..p.run_count() {
+            let len = p.run(j).map(|r| r.text().chars().count()).unwrap_or(0);
+            if len > 0 && acc >= start && acc + len <= end {
+                first.get_or_insert(j);
+                last = j + 1;
+            }
+            acc += len;
+        }
+        let Some(first) = first else { return false };
+        if !p.wrap_hyperlink(first, last, &rel_id) {
+            return false;
+        }
+        for j in first..last {
+            if let Some(mut r) = p.run_mut(j) {
+                r.set_color("0563C1");
+                r.set_underline(true);
+            }
+        }
+        true
+    })
+    .unwrap_or(false)
+}
+
+/// Remove the hyperlink covering a char offset, keeping the text and
+/// clearing the direct link look (color + underline).
+pub fn remove_hyperlink_at(doc: &mut Document, at: &EditPath, off: usize) -> bool {
+    with_paragraph_at(doc, at, |p| {
+        let Some((idx, cs, ce, _)) = hyperlink_extents(p)
+            .into_iter()
+            .find(|(_, cs, ce, _)| off >= *cs && off < *ce)
+        else {
+            return false;
+        };
+        // Runs covered by the span, located before the span is removed.
+        let mut acc = 0usize;
+        let mut covered = Vec::new();
+        for j in 0..p.run_count() {
+            let len = p.run(j).map(|r| r.text().chars().count()).unwrap_or(0);
+            if len > 0 && acc >= cs && acc + len <= ce {
+                covered.push(j);
+            }
+            acc += len;
+        }
+        if !p.unwrap_hyperlink(idx) {
+            return false;
+        }
+        for j in covered {
+            if let Some(mut r) = p.run_mut(j) {
+                r.set_color_value(None);
+                r.set_underline(false);
+            }
+        }
+        true
+    })
+    .unwrap_or(false)
+}
+
 /// The paragraph's list membership: (numId, level), or None.
 pub fn list_numbering_at(doc: &mut Document, at: &EditPath) -> Option<(u32, u32)> {
     with_paragraph_at(doc, at, |p| p.numbering_value()).flatten()

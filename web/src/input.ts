@@ -17,6 +17,7 @@ import { alignSelection, tabCell, setListLevel } from "./format.js";
 import { copySelection, cutSelection, clearImageSel, selectImage, deleteSelectedImage } from "./clipboard.js";
 import { openFind, openReplace, closeFind, isFindOpen, findq, replq } from "./find.js";
 import { imeEl, finalizeComposition } from "./ime.js";
+import { openLinkBar, linkUrlAt } from "./link.js";
 
 function svgPoint(svg: SVGSVGElement, clientX: number, clientY: number) {
   return new DOMPoint(clientX, clientY).matrixTransform(svg.getScreenCTM()!.inverse());
@@ -214,6 +215,18 @@ export function wireInput() {
     if (mouse.tripled) { mouse = null; return; }
     if (!mouse.dragged) {
       const pt = svgPoint(mouse.svg, e.clientX, e.clientY);
+      // Ctrl+click follows a hyperlink without moving the caret.
+      if (e.ctrlKey && !e.shiftKey) {
+        const found = findHit(mouse.page, pt.x, pt.y);
+        if (found && found.hit.path !== null && found.hit.start !== null) {
+          const url = linkUrlAt(found.hit.path, found.hit.start + found.k);
+          if (url) {
+            window.open(url, "_blank", "noopener");
+            mouse = null;
+            return;
+          }
+        }
+      }
       if (e.shiftKey && (S.caret || S.selAnchor)) {
         const found = findHit(mouse.page, pt.x, pt.y);
         if (found && found.hit.path !== null && found.hit.start !== null) {
@@ -247,6 +260,7 @@ export function wireInput() {
     const key = e.key.toLowerCase();
     if (ctrl && !e.altKey && key === "f") { e.preventDefault(); openFind(); return; }
     if (ctrl && !e.altKey && key === "h") { e.preventDefault(); openReplace(); return; }
+    if (ctrl && !e.altKey && key === "k") { e.preventDefault(); openLinkBar(); return; }
     if (e.key === "Escape" && isFindOpen()) { e.preventDefault(); closeFind(); return; }
     if (ctrl && key === "c") { e.preventDefault(); copySelection(); return; }
     if (ctrl && key === "x") { e.preventDefault(); cutSelection(); return; }
