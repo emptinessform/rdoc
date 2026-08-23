@@ -43,10 +43,39 @@ window.__benchResult = "pending";
   check("editing works after toggle-off", t.textAt("d/0").includes("X"));
   t.undo();
 
-  // 4. The demo has no revisions.
+  // 4. Accept all: insertion baked in, deletion gone, no revisions left.
+  t.acceptAll();
+  await wait(400);
+  check("accept keeps insertion", pageText().includes("NEW"));
+  check("accept drops deletion", !pageText().includes("OLD"));
+  check("accept clears revisions", t.hasRevisions() === false);
+  t.trackChanges(true);
+  await wait(400);
+  check("tracked view shows nothing left", !pageText().includes("OLD"));
+  t.trackChanges(false);
+  await wait(400);
+  t.undo();
+  await wait(300);
+  check("undo restores revisions", t.hasRevisions() === true);
+
+  // 5. Reject all: insertion gone, deletion restored.
+  t.rejectAll();
+  await wait(400);
+  res.info.rejected = pageText();
+  check("reject drops insertion", !pageText().includes("NEW"));
+  check("reject restores deletion", pageText().includes("OLD"));
+  const bytes2 = t.saveDocx();
+  await t.loadBytes(bytes2);
+  await wait(600);
+  check("round-trip keeps rejected state", !pageText().includes("NEW") && pageText().includes("OLD"));
+
+  // 6. The demo has no revisions; accept refuses instead of no-op'ing.
   document.getElementById("demo").click();
   await wait(1200);
   check("demo reports no revisions", t.hasRevisions() === false);
+  let refused = false;
+  try { t.acceptAll(); } catch (e) { refused = true; }
+  check("accept on a clean doc refuses", refused);
 
   window.__benchResult = JSON.stringify(res);
 })().catch(e => { window.__benchResult = "ERR: " + e; });

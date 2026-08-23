@@ -53,6 +53,16 @@ const COMMANDS: Record<string, () => void> = {
   marginsNarrow: () => pageOp(() => S.conv.set_margins_pt(36, 36, 36, 36)),
   marginsWide: () => pageOp(() => S.conv.set_margins_pt(72, 144, 72, 144)),
   trackChanges: () => toggleTrackedView(),
+  // Accept/reject work on the final view: leave the read-only Tracked
+  // projection first, then run as a normal one-undo edit.
+  acceptAll: () => {
+    if (S.trackedView) toggleTrackedView(false);
+    edit(() => S.conv.accept_all_revisions());
+  },
+  rejectAll: () => {
+    if (S.trackedView) toggleTrackedView(false);
+    edit(() => S.conv.reject_all_revisions());
+  },
   comments: () => toggleComments(),
   insertImage: () => (document.getElementById("imgfile") as HTMLInputElement).click(),
   undo: doUndo,

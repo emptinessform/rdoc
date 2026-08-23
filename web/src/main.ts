@@ -249,6 +249,8 @@ window.__t = {
   trackChanges: (on: boolean) => toggleTrackedView(on),
   hasRevisions: () => S.conv.has_revisions(),
   toggleComments: (on?: boolean) => toggleComments(on),
+  acceptAll: () => { const j = S.conv.accept_all_revisions(); apply(j, 0); },
+  rejectAll: () => { const j = S.conv.reject_all_revisions(); apply(j, 0); },
   commentList: () => JSON.parse(S.conv.comment_list()),
   commentSpans: () => JSON.parse(S.conv.comment_spans()),
   setPaper: (w: number, h: number) => { const j = S.conv.set_paper(w, h); apply(j, 0); },

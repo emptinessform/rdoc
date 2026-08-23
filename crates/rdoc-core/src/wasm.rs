@@ -538,6 +538,23 @@ impl SvgConverter {
         Ok(!doc.revisions().is_empty())
     }
 
+    /// Accept every tracked revision, as one history entry. Refuses when
+    /// the document has none (so the menu action cannot record a no-op).
+    pub fn accept_all_revisions(&mut self) -> Result<String, JsValue> {
+        self.mutate(
+            |d| d.accept_all().map(|n| n > 0).unwrap_or(false),
+            "accept revisions",
+        )
+    }
+
+    /// Reject every tracked revision, as one history entry.
+    pub fn reject_all_revisions(&mut self) -> Result<String, JsValue> {
+        self.mutate(
+            |d| d.reject_all().map(|n| n > 0).unwrap_or(false),
+            "reject revisions",
+        )
+    }
+
     /// The document's comments as JSON
     /// `[{"id","author","text","resolved"}]`. Read-only.
     pub fn comment_list(&mut self) -> Result<String, JsValue> {
