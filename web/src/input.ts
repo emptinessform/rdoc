@@ -190,26 +190,97 @@ export function wireInput() {
     extendDragTo(e.clientX, e.clientY);
   });
 
-  pagesEl.addEventListener("dblclick", (e) => {
-    const svg = (e.target as Element).closest("svg");
-    if (!svg) return;
+  // Select the word under a client-coordinate point (double-click and
+  // touch long-press share this).
+  const selectWordAtClient = (clientX: number, clientY: number): boolean => {
+    const el = document.elementFromPoint(clientX, clientY);
+    const svg = el && el.closest("svg");
+    if (!svg) return false;
     const page = [...pagesEl.children].indexOf(svg) + 1;
-    const pt = svgPoint(svg as SVGSVGElement, e.clientX, e.clientY);
+    const pt = svgPoint(svg as SVGSVGElement, clientX, clientY);
     const found = findHit(page, pt.x, pt.y);
-    if (!found || found.hit.path === null || found.hit.start === null) return;
+    if (!found || found.hit.path === null || found.hit.start === null) return false;
     const h = found.hit;
     const text = S.conv.paragraph_text_at(h.path!) || "";
     const cs = chars(text);
     let off = Math.min(h.start! + found.k, cs.length);
     if (off >= cs.length) off = cs.length - 1;
-    if (off < 0) return;
+    if (off < 0) return false;
     const isWord = (ch: string | undefined) => !!ch && !/\s/.test(ch);
-    if (!isWord(cs[off])) return;
+    if (!isWord(cs[off])) return false;
     let lo = off, hi = off + 1;
     while (lo > 0 && isWord(cs[lo - 1])) lo--;
     while (hi < cs.length && isWord(cs[hi])) hi++;
-    if (selectParaOffsets(h.path!, lo, hi))
-      report(`word: ${JSON.stringify(cs.slice(lo, hi).join(""))}`);
+    if (!selectParaOffsets(h.path!, lo, hi)) return false;
+    report(`word: ${JSON.stringify(cs.slice(lo, hi).join(""))}`);
+    return true;
+  };
+
+  pagesEl.addEventListener("dblclick", (e) => {
+    selectWordAtClient(e.clientX, e.clientY);
+  });
+
+  // ---- touch: long-press selects a word, then dragging extends the
+  // selection (scroll is suppressed only in that mode); a quick move
+  // before the long-press fires stays a native scroll.
+  let touch: { x: number; y: number; timer: ReturnType<typeof setTimeout> | null; selecting: boolean } | null = null;
+
+  pagesEl.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return;
+    const t0 = e.touches[0];
+    const state = { x: t0.clientX, y: t0.clientY, timer: null as ReturnType<typeof setTimeout> | null, selecting: false };
+    state.timer = setTimeout(() => {
+      state.timer = null;
+      if (selectWordAtClient(state.x, state.y)) {
+        state.selecting = true;
+        // The selection anchor for extension is the pressed point.
+        const el = document.elementFromPoint(state.x, state.y);
+        const svg = el && el.closest("svg");
+        if (svg) {
+          const page = [...pagesEl.children].indexOf(svg) + 1;
+          const pt = svgPoint(svg as SVGSVGElement, state.x, state.y);
+          const found = findHit(page, pt.x, pt.y);
+          if (found) {
+            mouse = {
+              svg: svg as SVGSVGElement, page,
+              start: { x: state.x, y: state.y },
+              anchor: { page: found.hit.page, idx: found.hit.id, k: found.k },
+              dragged: true,
+            };
+          }
+        }
+        if (navigator.vibrate) navigator.vibrate(10);
+      }
+    }, 500);
+    touch = state;
+  }, { passive: true });
+
+  pagesEl.addEventListener("touchmove", (e) => {
+    if (!touch) return;
+    const t0 = e.touches[0];
+    if (touch.selecting) {
+      e.preventDefault(); // selection drag, not scroll
+      extendDragTo(t0.clientX, t0.clientY);
+      return;
+    }
+    // Moved before the long press fired: it is a scroll — cancel.
+    if (touch.timer && Math.hypot(t0.clientX - touch.x, t0.clientY - touch.y) > 10) {
+      clearTimeout(touch.timer);
+      touch = null;
+    }
+  }, { passive: false });
+
+  const endTouch = () => {
+    if (touch?.timer) clearTimeout(touch.timer);
+    if (touch?.selecting) mouse = null;
+    touch = null;
+  };
+  pagesEl.addEventListener("touchend", endTouch);
+  pagesEl.addEventListener("touchcancel", endTouch);
+
+  // A long press must not pop the browser context menu over the page.
+  pagesEl.addEventListener("contextmenu", (e) => {
+    if (touch?.selecting) e.preventDefault();
   });
 
   window.addEventListener("mouseup", (e) => {
