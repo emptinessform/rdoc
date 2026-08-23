@@ -59,11 +59,20 @@
   .caret { animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
 
+  /* Tools toggle: desktop always shows the toolbar, so the button hides. */
+  #toolstoggle { display: none; background: none; border: 0; color: #ddd;
+    font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 6px; }
+  #toolstoggle:hover, body.tools-open #toolstoggle { background: #3a3e45; color: #fff; }
+
   /* ---- narrow screens (mobile) ---- */
   @media (max-width: 640px) {
     #menubar { padding: 2px 6px 0; }
     #menubar .brand { margin: 0 6px 0 2px; }
-    #toolbar { padding: 4px 6px; gap: 4px; }
+    /* The toolbar eats three rows on a phone: collapsed by default,
+       expanded with the 도구 toggle in the menubar. */
+    #toolstoggle { display: block; }
+    #toolbar { display: none; }
+    body.tools-open #toolbar { display: flex; padding: 4px 6px; gap: 4px; }
     #pages { padding: 10px 4px; gap: 12px; }
     /* Pages shrink to the screen; hit mapping goes through getScreenCTM,
        so CSS downscaling stays click-accurate. */
@@ -170,6 +179,7 @@
         <button data-cmd="comments">주석 표시</button>
       </div>
     </div>
+    <button id="toolstoggle" title="도구 모음 접기/펼치기">도구</button>
     <span id="status">loading wasm…</span>
   </div>
   <div id="toolbar">

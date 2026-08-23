@@ -166,6 +166,10 @@ export function wireRender() {
   const zoomEl = document.getElementById("zoom") as HTMLSelectElement;
   zoomEl.onchange = () => { S.zoom = +zoomEl.value; applyZoom(); };
 
+  document.getElementById("toolstoggle")!.onclick = () => {
+    document.body.classList.toggle("tools-open");
+  };
+
   document.getElementById("thumbtoggle")!.onclick = () => {
     thumbsEl.hidden = !thumbsEl.hidden;
     document.body.classList.toggle("thumbs-open", !thumbsEl.hidden);
