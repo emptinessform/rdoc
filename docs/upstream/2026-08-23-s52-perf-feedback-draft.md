@@ -1,7 +1,7 @@
 # 업스트림 피드백 초안 (tensorbee/rdocx — 새 이슈)
-> 상태: **폐기 (미게시)** — v0.9.0 출시로 기준이 바뀜어
+> 상태: **폐기 (미게시)** — v0.9.0 출시로 기준이 바뀌어
 > 2026-08-24-v090-perf-feedback-draft.md로 대체됨 (s52 수치는 기록으로 보존).
-> (2026-08-23 사용자 결정). 수치·재현 절차는 게시 시점에 재검증할 것.
+
 
 **Title:** S52 editor benchmark: typing 2.4x and note insert/delete
 ~10x slower than the #40/#41 reference implementations
