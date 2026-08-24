@@ -1,0 +1,61 @@
+--- /dev/fd/63	2026-08-24 11:37:20.000000000 +0900
++++ /tmp/lib09.rs	2026-08-24 11:19:43.945675900 +0900
+@@ -432,6 +432,12 @@
+                     self.emit_elements(out, &g.children);
+                     out.push_str("</g>\n");
+                 }
++                // Tagged-structure ownership (v0.9.0): draws nothing itself,
++                // so render the children in place. Artifacts (structure None)
++                // are decorative but still visible content.
++                PositionedElement::MarkedContent { children, .. } => {
++                    self.emit_elements(out, children);
++                }
+                 _ => {
+                     self.warnings += 1;
+                 }
+@@ -469,6 +475,7 @@
+                         r.push_hit(run);
+                     }
+                     PositionedElement::Group(g) => walk(r, &g.children),
++                    PositionedElement::MarkedContent { children, .. } => walk(r, children),
+                     _ => {}
+                 }
+             }
+@@ -1051,6 +1058,12 @@
+                 h.f64(g.opacity);
+                 hash_elements(&g.children, h);
+             }
++            // Structure ownership affects nothing we draw; hash the payload
++            // so page fingerprints still track real content changes.
++            PositionedElement::MarkedContent { children, .. } => {
++                h.bytes(b"m");
++                hash_elements(children, h);
++            }
+             _ => h.bytes(b"?"),
+         }
+     }
+--- /dev/fd/63	2026-08-24 11:37:20.000000000 +0900
++++ /tmp/wasm09.rs	2026-08-24 11:19:44.044985900 +0900
+@@ -1565,12 +1565,17 @@
+ 
+     /// Swap in a restored document, carrying the fallback layout engine
+     /// (and its content-keyed relayout caches) over so undo/redo do not go
+-    /// cache-cold. Interim fork API until F-X039's session design lands.
++    /// cache-cold. Upstream v0.9.0 checks compatibility itself and keeps
++    /// the engine only when the new content matches.
+     fn replace_doc(&mut self, new_doc: rdocx::Document) {
+-        if let Some(old) = self.doc.as_ref()
+-            && let Some(engine) = old.take_layout_engine()
+-        {
+-            new_doc.set_layout_engine(engine);
++        let mut new_doc = new_doc;
++        if let Some(old) = self.doc.as_mut() {
++            let fonts: Vec<(&str, &[u8])> = self
++                .fonts
++                .iter()
++                .map(|(family, data)| (family.as_str(), data.as_slice()))
++                .collect();
++            new_doc.transfer_reusable_bundled_fallback_layout_from(old, &fonts);
+         }
+         self.doc = Some(new_doc);
+     }
