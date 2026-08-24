@@ -1,9 +1,10 @@
 # 업스트림 피드백 초안 (tensorbee/rdocx — 새 이슈)
 
-> 상태: **초안 (미게시)** — 사용자 승인 후 게시.
+> 상태: **게시됨 — 이슈 #46** (2026-08-24, 사용자 승인).
+> https://github.com/tensorbee/rdocx/issues/46
 > 근거 수치: S55 스파이크(docs/worklog/2026-08-24-s55-v090-spike.md),
 > 동일 세션 교차 측정, 2026-08-24.
-> 대체 대상: 2026-08-23-s52-perf-feedback-draft.md (미게시 보관, s52 기준).
+> 대체 대상: 2026-08-23-s52-perf-feedback-draft.md (미게시 폐기, s52 기준).
 
 **Title:** v0.9.0 editor path: typing ~2-3x and undo ~4x slower than the
 #40/#41 reference implementations (note ops recovered)
