@@ -23,8 +23,18 @@ fn main() {
     let long = std::env::var("RDOC_BENCH2_LONG").is_ok();
     let tables = std::env::var("RDOC_BENCH2_TABLES").is_ok();
     let heading = std::env::var("RDOC_BENCH2_HEADING").is_ok();
+    // ONE footnote anywhere: `input.footnotes.is_none()` is an explicit
+    // condition of v0.10.1's document-global restart eligibility.
+    let notes = std::env::var("RDOC_BENCH2_NOTES").is_ok();
+    // A header/footer: `sections[0].header_footer.is_none()` is another
+    // explicit condition of the same document-global eligibility test.
+    let hf = std::env::var("RDOC_BENCH2_HF").is_ok();
 
     let mut doc = rdocx::Document::new();
+    if hf {
+        doc.set_header("Relayout benchmark — draft");
+        doc.set_footer_page_number("Page ");
+    }
     if heading {
         doc.add_paragraph("Relayout benchmark").style("Heading1");
     }
@@ -55,6 +65,13 @@ fn main() {
         }
     }
 
+    if notes {
+        assert!(
+            doc.insert_footnote_ref_at(&[10], 5).is_some(),
+            "footnote insert failed"
+        );
+    }
+
     let t = Instant::now();
     let layout = doc.layout().expect("layout");
     let cold = t.elapsed().as_secs_f64() * 1000.0;
@@ -71,10 +88,12 @@ fn main() {
     let mean = keystroke.iter().sum::<f64>() / keystroke.len() as f64;
     let min = keystroke.iter().cloned().fold(f64::MAX, f64::min);
     println!(
-        "variant: paragraphs={} tables={} heading={}",
+        "variant: paragraphs={} tables={} heading={} notes={} hf={}",
         if long { "long(4-line)" } else { "short(1-line)" },
         if tables { 14 } else { 0 },
-        if heading { 1 } else { 0 }
+        if heading { 1 } else { 0 },
+        if notes { 1 } else { 0 },
+        if hf { 1 } else { 0 }
     );
     println!("pages: {pages}, cold layout: {cold:.0} ms");
     println!("relayout per keystroke: mean {mean:.0} ms, min {min:.0} ms (n=10)");
