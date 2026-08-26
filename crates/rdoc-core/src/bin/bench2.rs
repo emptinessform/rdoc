@@ -29,6 +29,13 @@ fn main() {
     // A header/footer: `sections[0].header_footer.is_none()` is another
     // explicit condition of the same document-global eligibility test.
     let hf = std::env::var("RDOC_BENCH2_HF").is_ok();
+    // Paragraph COUNT, to vary page count while holding paragraph length
+    // fixed. v0.10.1 only publishes its restart cache when
+    // `pages.max(checkpoints) <= RESTART_CACHE_MAX_ENTRIES` (32).
+    let paras: usize = std::env::var("RDOC_BENCH2_PARAS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(700);
 
     let mut doc = rdocx::Document::new();
     if hf {
@@ -38,7 +45,7 @@ fn main() {
     if heading {
         doc.add_paragraph("Relayout benchmark").style("Heading1");
     }
-    for i in 0..700 {
+    for i in 0..paras {
         if long {
             // Same paragraph body as the S3 bench: wraps to ~4 lines.
             let mut text = String::new();
@@ -80,7 +87,7 @@ fn main() {
 
     let mut keystroke = Vec::new();
     for k in 0..10 {
-        assert!(insert_at(&mut doc, 350, 10 + k, "x"));
+        assert!(insert_at(&mut doc, paras / 2, 10 + k, "x"));
         let t = Instant::now();
         let _ = doc.layout().expect("layout");
         keystroke.push(t.elapsed().as_secs_f64() * 1000.0);
@@ -88,7 +95,8 @@ fn main() {
     let mean = keystroke.iter().sum::<f64>() / keystroke.len() as f64;
     let min = keystroke.iter().cloned().fold(f64::MAX, f64::min);
     println!(
-        "variant: paragraphs={} tables={} heading={} notes={} hf={}",
+        "variant: n={} paragraphs={} tables={} heading={} notes={} hf={}",
+        paras,
         if long { "long(4-line)" } else { "short(1-line)" },
         if tables { 14 } else { 0 },
         if heading { 1 } else { 0 },
