@@ -77,7 +77,13 @@ python serve.py   # http.server 8741 + no-cache (모듈 캐시 방지)
   폰트 세트에서는 v0.10.1이 오히려 빠르다(56 vs 62.5 ms). 1페이지 문서로
   분리: 폰트 없으면 두 빌드 동일(5~7 ms), 폰트 5종이면 0.8 +20 ms /
   v0.10.1 +50 ms, **별칭을 다 빼도 동일** → F-X051 별칭은 무관.
-  네이티브 재현 하네스는 `bin/bench3.rs`.
+  네이티브 재현 하네스는 `bin/bench3.rs`. **원인 지점**: F-X052가 추가한
+  `ReusableEngineContext::matches_input`의 `self.fonts == input.fonts`
+  (engine.rs) — 재레이아웃마다 캐러 폰트 22 MB를 한 번 더 바이트 비교한다.
+  이 한 줄을 얕은 비교로 바꾸면(포크 `exp/font-compare`) 회귀가 사라진다
+  (58p 타이핑 119·107 → 93·82, 0.8은 103·86). `load_additional_fonts`의
+  같은 비교는 0.8에도 있고, 그것까지 바꾸면 로드가 빨라진다 —
+  **우리 포크 적용 후보**.
   ⚠ 측정 규약: 이 머신은 같은 빌드 연속 3회가 64→89→155 ms로 흔들린다.
   브라우저 A/B는 pkg 2벌을 보관해 **한 세션 내 교대**로 잴 것. 포크 `svg-poc-0.10`, rdoc `s56-v0101-spike`,
   적응 패치 docs/upstream/2026-08-26-rdoc-v0101-adaptation.diff로 보존.
