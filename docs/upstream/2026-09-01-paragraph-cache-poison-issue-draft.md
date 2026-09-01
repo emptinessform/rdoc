@@ -1,4 +1,6 @@
-# Issue draft A — paragraph cache poisoning
+# Issue A — paragraph cache poisoning
+
+**게시됨**: https://github.com/tensorbee/rdocx/issues/65 (2026-09-01)
 
 **Title**
 

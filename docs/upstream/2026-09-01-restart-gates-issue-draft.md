@@ -1,4 +1,6 @@
-# Issue draft B — restart pagination never engages on ordinary prose
+# Issue B — restart pagination never engages on ordinary prose
+
+**게시됨**: https://github.com/tensorbee/rdocx/issues/66 (2026-09-01)
 
 **Title**
 
