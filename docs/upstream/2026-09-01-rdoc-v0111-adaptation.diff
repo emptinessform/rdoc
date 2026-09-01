@@ -1,0 +1,118 @@
+diff --git a/crates/rdoc-core/Cargo.toml b/crates/rdoc-core/Cargo.toml
+index 404ea1c..8185f12 100644
+--- a/crates/rdoc-core/Cargo.toml
++++ b/crates/rdoc-core/Cargo.toml
+@@ -25,9 +25,9 @@ default = ["native"]
+ native = ["rdocx/system-fonts"]
+ 
+ [dependencies]
+-rdocx = { git = "https://github.com/emptinessform/rdocx", rev = "29a4a5ceade1532919aab8ad79821fa4cd4f24f5", default-features = false }
+-oxml-layout = { git = "https://github.com/emptinessform/rdocx", rev = "29a4a5ceade1532919aab8ad79821fa4cd4f24f5", default-features = false }
+-oxml-pdf = { git = "https://github.com/emptinessform/rdocx", rev = "29a4a5ceade1532919aab8ad79821fa4cd4f24f5", default-features = false }
++rdocx = { path = "D:/sb/SBDoc/rdocx-fork/crates/rdocx", default-features = false }
++oxml-layout = { path = "D:/sb/SBDoc/rdocx-fork/crates/oxml-layout", default-features = false }
++oxml-pdf = { path = "D:/sb/SBDoc/rdocx-fork/crates/oxml-pdf", default-features = false }
+ ttf-parser = "0.25"
+ base64 = "0.22"
+ serde = { version = "1", features = ["derive"] }
+diff --git a/crates/rdoc-core/src/lib.rs b/crates/rdoc-core/src/lib.rs
+index 73de9d9..dcd1d35 100644
+--- a/crates/rdoc-core/src/lib.rs
++++ b/crates/rdoc-core/src/lib.rs
+@@ -432,6 +432,12 @@ impl<'a> SvgRenderer<'a> {
+                     self.emit_elements(out, &g.children);
+                     out.push_str("</g>\n");
+                 }
++                // Tagged-structure ownership (v0.9.0+): draws nothing itself,
++                // so render the children in place. Artifacts (structure None)
++                // are decorative but still visible content.
++                PositionedElement::MarkedContent { children, .. } => {
++                    self.emit_elements(out, children);
++                }
+                 _ => {
+                     self.warnings += 1;
+                 }
+@@ -469,6 +475,7 @@ impl<'a> SvgRenderer<'a> {
+                         r.push_hit(run);
+                     }
+                     PositionedElement::Group(g) => walk(r, &g.children),
++                    PositionedElement::MarkedContent { children, .. } => walk(r, children),
+                     _ => {}
+                 }
+             }
+@@ -1051,6 +1058,12 @@ fn hash_elements(elements: &[PositionedElement], h: &mut Fnv) {
+                 h.f64(g.opacity);
+                 hash_elements(&g.children, h);
+             }
++            // Structure ownership affects nothing we draw; hash the payload
++            // so page fingerprints still track real content changes.
++            PositionedElement::MarkedContent { children, .. } => {
++                h.bytes(b"m");
++                hash_elements(children, h);
++            }
+             _ => h.bytes(b"?"),
+         }
+     }
+diff --git a/crates/rdoc-core/src/wasm.rs b/crates/rdoc-core/src/wasm.rs
+index 9329c36..c8849c1 100644
+--- a/crates/rdoc-core/src/wasm.rs
++++ b/crates/rdoc-core/src/wasm.rs
+@@ -137,7 +137,7 @@ impl SvgConverter {
+             },
+         };
+         let layout = doc
+-            .layout_with_fonts_aliases_options_and_bundled_fallback(&fonts, &aliases, options)
++            .layout_with_fonts_aliases_and_bundled_fallback_and_options(&fonts, &aliases, options)
+             .map_err(err)?;
+         let delta = render_delta(&layout, &mut self.cache);
+         serde_json::to_string(&RenderOut {
+@@ -173,7 +173,7 @@ impl SvgConverter {
+             },
+         };
+         let layout = doc
+-            .layout_with_fonts_aliases_options_and_bundled_fallback(&fonts, &aliases, options)
++            .layout_with_fonts_aliases_and_bundled_fallback_and_options(&fonts, &aliases, options)
+             .map_err(err)?;
+         crate::render_page_svg(&layout, index).ok_or_else(|| err("page out of range"))
+     }
+@@ -907,7 +907,7 @@ impl SvgConverter {
+             },
+         };
+         let layout = doc
+-            .layout_with_fonts_aliases_options_and_bundled_fallback(&fonts, &aliases, options)
++            .layout_with_fonts_aliases_and_bundled_fallback_and_options(&fonts, &aliases, options)
+             .map_err(err)?;
+         Ok(oxml_pdf::render_to_pdf(&layout.layout))
+     }
+@@ -1565,12 +1565,26 @@ impl SvgConverter {
+ 
+     /// Swap in a restored document, carrying the fallback layout engine
+     /// (and its content-keyed relayout caches) over so undo/redo do not go
+-    /// cache-cold. Interim fork API until F-X039's session design lands.
++    /// cache-cold. Upstream v0.10.1 checks compatibility itself and keeps
++    /// the engine only when the caller fonts AND aliases still match, so
++    /// the alias-aware variant is required here — the plain one rejects
++    /// the transfer whenever aliases are registered.
+     fn replace_doc(&mut self, new_doc: rdocx::Document) {
+-        if let Some(old) = self.doc.as_ref()
+-            && let Some(engine) = old.take_layout_engine()
+-        {
+-            new_doc.set_layout_engine(engine);
++        let mut new_doc = new_doc;
++        if let Some(old) = self.doc.as_mut() {
++            let fonts: Vec<(&str, &[u8])> = self
++                .fonts
++                .iter()
++                .map(|(family, data)| (family.as_str(), data.as_slice()))
++                .collect();
++            let aliases: Vec<(&str, &str)> = self
++                .aliases
++                .iter()
++                .map(|(requested, family)| (requested.as_str(), family.as_str()))
++                .collect();
++            new_doc.transfer_reusable_bundled_fallback_layout_from_with_aliases(
++                old, &fonts, &aliases,
++            );
+         }
+         self.doc = Some(new_doc);
+     }
