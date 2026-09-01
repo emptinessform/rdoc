@@ -7,11 +7,16 @@ v0.11.1: restart pagination cannot engage on ordinary prose — `lines.len() <= 
 **Body**
 
 Separate from #53 and from the paragraph-cache issue filed alongside this one.
-On the layout entry point our editor uses
-(`layout_with_fonts_aliases_and_bundled_fallback`), restart pagination never
-engages on a normal 58-page prose document, so every keystroke re-paginates the
-whole document. Two independent conditions each suffice to prevent it, so
-relaxing either alone changes nothing.
+Restart pagination never engages on a document of ordinary prose, so every
+keystroke re-paginates the whole document. Two independent conditions each
+suffice to prevent it, so relaxing either alone changes nothing.
+
+This is not specific to any one layout entry point. We first saw it through
+`layout_with_fonts_aliases_and_bundled_fallback`, which our editor uses, but
+plain `Document::layout()` shows the same thing as soon as the paragraphs are
+longer than two lines: 700 four-line paragraphs relayout in 30-33 ms against
+21-22 ms on our 0.8-based fork, consistently across three paired rounds. What
+decides it is paragraph length, not the entry point.
 
 ## Condition 1 — the per-block gate is document-global
 
