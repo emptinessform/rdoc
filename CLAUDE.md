@@ -67,7 +67,29 @@ python serve.py   # http.server 8741 + no-cache (모듈 캐시 방지)
   (2) **번들-폴백 경로 1.5×** — `layout_with_fonts_aliases_and_bundled_
   fallback`이 폰트·별칭과 무관하게 63p에서 52 vs 31 ms인데 같은 문서를
   `doc.layout()`로 재면 대등(16~22 vs 17~19) → S58의 bidi/셰이핑/하이픈
-  고정 비용으로 추정. 둘 다 업스트림 게시 후보(사용자 확인 후).
+  고정 비용으로 추정했으나 **원인 규명 완료**.
+  **원인 (S57 후속, systematic-debugging)**: (1) 각주 절벽은
+  페이지네이션이 아니라 **문단 캐시 poison** — 캐시 비안전 블록을 만나면
+  `engine.rs`가 `paragraph_cache_reads_enabled = false`로 레이아웃
+  나머지 전체의 캐시를 끄고, `paragraph_is_cache_safe`가 Text/Tab/Break만
+  허용해 각주 참조 문단이 탈락한다 (키당 hits +699/builds +1 →
+  hits +10/builds +689; 그 한 줄만 빼면 15~17 → 4~6 ms). **F-X062는
+  정상 작동** — 각주가 있어도 재시작 플래그·체크포인트·paginate 0.1 ms가
+  동일하다. (2) 재시작이 **산문 문서에서 아예 안 켜진다** —
+  `lines.len() <= 2 && heading/keep` 조건을 `all()`로 문서 전역 요구
+  (715 중 701 탈락, 줄 수만 풀면 제목 1개가 남아 여전히 실격) + 
+  `RESTART_CACHE_MAX_BYTES = 8 MiB`인데 58페이지 후보가 25.1 MB(총 64 MiB
+  중 문단 캐시가 50 MiB를 가져간 나머지). **진입점 무관** —
+  `doc.layout()`도 4줄 문단이면 30~33 vs 0.8의 21~22 ms
+  (S56의 "4줄 문단 1.3× 철회"는 성급했다; 페어 측정으로 일관).
+  둘 다 풀면 21~28 ms로 0.8(31~39)보다 빠르지만, 브라우저 3방향 A/B에서
+  **Enter가 116 → 315 ms(2.7×)** 악화해 포크 패치로는 순손해다
+  (게시 비용 아님 — 25 MB 게시가 0.6~0.9 ms; 원인 미규명).
+  **이슈 게시**(2026-09-01): **#65**(문단 캐시 poison),
+  **#66**(재시작 게이트+예산) → 응답 대기. **0.8 핀에는 두 문제가 모두
+  없으므로 rdoc에서 지금 고칠 것은 없다.** 진단 브랜치
+  `exp/v0111-diag`(8b9e83a, RDOC_DIAG + 오버라이드 4종),
+  실험 브랜치 `exp/v0111-gates`(4812a2a).
   포크 `svg-poc-0.11`(c8dbdc9), rdoc `s57-v0111-spike`, 적응 패치
   docs/upstream/2026-09-01-rdoc-v0111-adaptation.diff. rdoc 적응은
   **v0.10.1 적응 그대로, 추가 수정 0줄**.
