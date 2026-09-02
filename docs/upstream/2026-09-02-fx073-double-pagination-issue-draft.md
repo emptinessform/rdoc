@@ -1,6 +1,6 @@
 # Issue — F-X073 paginates ordinary prose twice and still never publishes a restart record
 
-**게시 전 초안** (사용자 확인 후 게시)
+**게시됨**: https://github.com/tensorbee/rdocx/issues/67 (2026-09-02)
 
 **Title**
 
@@ -77,7 +77,14 @@ Four alternating rounds per build, median of per-keystroke minima, ms:
 | 700 paragraphs, one footnote (#65 fixture) | 7 | 22 | 7.5 | 8.5 |
 
 `+F-X072` matches v0.11.1, so the regression is entirely F-X073. It is not
-variance: `0582da0` loses 4/4 and 6/6 paired rounds on those fixtures.
+variance: `0582da0` is the slower build in 4/4 paired rounds against
+`+F-X072` on both fixtures, and in 6/6 against the 0.8 fork on the first.
+
+In our browser editor, five alternating paired rounds on a 58-page document
+(medians, against the 0.8 pin): typing 1.24x, **merge 1.53x (5/5)** and
+**undo 1.39x (5/5)**. Typing was already 1.24x on v0.11.1; merge and undo were
+at parity there and are new here. Both take the full-relayout fallback, which is
+where the second pagination lands.
 
 The trigger is paragraphs that span more than one line, not document size. Same
 total line count, different paragraph length:
