@@ -43,15 +43,16 @@ python serve.py   # http.server 8741 + no-cache (모듈 캐시 방지)
 ## 업스트림 관계 (tensorbee/rdocx)
 
 - 기반: 업스트림 **v0.12.0** (2026-09-06 S59/S60에서 v0.8.0에서 이행).
-- 의존: 포크 `emptinessform/rdocx` 브랜치 `svg-poc-0.12` (rev `4777a741`
-  고정, Cargo.toml; 로컬 클론 D:\sb\SBDoc\rdocx-fork). v0.12.0 위 **37커밋**
-  (v0.8.0 위 50커밋에서 18개를 업스트림이 흡수해 드롭, 신규 5개 추가):
+- 의존: 포크 `emptinessform/rdocx` 브랜치 `svg-poc-0.12` (rev `eff0ea0c`
+  고정, Cargo.toml; 로컬 클론 D:\sb\SBDoc\rdocx-fork). v0.12.0 위 **38커밋**
+  (v0.8.0 위 50커밋에서 18개를 업스트림이 흡수해 드롭, 신규 6개 추가):
   S2 편집 헬퍼, 미주 타입 필드 승격·노트/표/이미지 편집 API, 리스트/링크/
   셀 병합/그리드 게터/본문 항목 이동(move_content)/이미지 리사이즈
   (resize_inline_image), "font-natural" 라인 규칙과 한글 어절 줄바꿈,
   합성 이탤릭, 후행 공백 행잉, 탭 스톱 파라미터화, 그리고 번들 폴백 엔진
   핸드오프(`take_layout_engine`/`set_layout_engine`), 그리고 노트 파트
-  캐시 게이트의 문단 단위 축소(S61). SBOdf도 같은 브랜치에 커밋한다.
+  캐시 게이트의 문단 단위 축소와 재시작 identity 메모이즈(S61).
+  SBOdf도 같은 브랜치에 커밋한다.
   ⚠ 어절 줄바꿈은 **라인브레이커의 `LineBreakParams::hangul_word_wrap`
   하나로만** 구현한다. v0.8.0의 `convert::text_segments` 프리스플릿은
   v0.12.0이 없앴고, 되살리면 업스트림 계약 테스트 2개
@@ -103,8 +104,11 @@ python serve.py   # http.server 8741 + no-cache (모듈 캐시 방지)
   페이지네이션이다. ⚠ v0.8 기준선은 **우리 포크의**
   `paginate_sections_cached`를 갖고 업스트림 v0.8.0에는 없으므로 업스트림
   회귀라고 부르지 않는다. 미해결.
-  부수: 빠른 경로의 `restart_body_identity` ~1.5N 호출은 레이아웃당 **3 ms**
-  뿐이라 후순위(트랜잭션 단위 메모이즈로 0.5N 가능, ~2 ms).
+  (3) **빠른 경로의 identity 직렬화**: 세 스캔이 같은 블록을 각각 다시
+  직렬화해 레이아웃당 ~1.5N회(3 ms)였다. → S61에서 `BodyIdentities` 메모로
+  블록당 1회(**1072 → 715**)로 줄였다. 타이핑 min 15 → **12 ms**,
+  mean 17 → 14 ms (6/6 승). 비교 대상은 불변(지문 프리필터 + identity
+  authority).
   기능 등가: 브라우저 배터리 50/50, 58페이지, 델타 2/58, 네이티브 PoC 히트
   272(264 매핑), 코퍼스 14/14에 문서별 SVG 크기가 v0.8 핀과 동일하고
   글리프 좌표도 일치. wasm 12.29 → **17.54 MB (+43%)**.
