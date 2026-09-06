@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rdoc knowledge notes — how a document editor gets fast</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #666; --line: #d0d0d0;
+    --accent: #2563eb; --accent-bg: #eff6ff; --warn-bg: #fef9ec; --warn-line: #f0c040;
+    --code-bg: #f5f5f5; --card: #fafafa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d; --fg: #e6e6e6; --muted: #9aa0a8; --line: #3a3f46;
+      --accent: #60a5fa; --accent-bg: #1e2a3f; --warn-bg: #2e2a1a; --warn-line: #8a7420;
+      --code-bg: #22252b; --card: #1c1f25;
+    }
+  }
+  body {
+    margin: 0 auto; max-width: 860px; padding: 2rem 1.2rem 6rem;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--fg); line-height: 1.7;
+  }
+  h1 { font-size: 1.7rem; border-bottom: 2px solid var(--accent); padding-bottom: .4rem; }
+  h2 { font-size: 1.3rem; margin-top: 3rem; border-left: 5px solid var(--accent); padding-left: .6rem; }
+  h3 { font-size: 1.05rem; margin-top: 2rem; }
+  p.lead { color: var(--muted); }
+  code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; font-size: .92em; }
+  .term { border-bottom: 2px dotted var(--accent); cursor: help; }
+  .box {
+    background: var(--accent-bg); border: 1px solid var(--accent);
+    border-radius: 8px; padding: .8rem 1rem; margin: 1rem 0;
+  }
+  .caveat {
+    background: var(--warn-bg); border: 1px solid var(--warn-line);
+    border-radius: 8px; padding: .8rem 1rem; margin: 1rem 0;
+  }
+  figure { margin: 1.5rem 0; text-align: center; }
+  figure svg { max-width: 100%; height: auto; }
+  figcaption { color: var(--muted); font-size: .88rem; margin-top: .5rem; }
+  table { border-collapse: collapse; margin: 1rem 0; width: 100%; }
+  th, td { border: 1px solid var(--line); padding: .45rem .7rem; text-align: left; font-size: .95rem; }
+  th { background: var(--card); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .toc { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.5rem; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .updated { color: var(--muted); font-size: .85rem; }
+  /* SVG: reuse the theme variables as-is */
+  svg text { font-family: inherit; fill: var(--fg); }
+  svg .mut { fill: var(--muted); }
+  svg .bx { fill: var(--card); stroke: var(--line); }
+  svg .hot { fill: var(--accent-bg); stroke: var(--accent); }
+  svg .ln { stroke: var(--muted); fill: none; }
+  svg .acc { stroke: var(--accent); fill: none; }
+</style>
+</head>
+<body>
+
+<h1>rdoc knowledge notes</h1>
+<p class="lead">
+Notes on what we learned building a DOCX editor that runs in the browser,
+written so that someone seeing this for the first time can follow along.
+A section is added each time the work moves forward.
+</p>
+<p class="updated">Last updated: 2026-09-07 · Korean original:
+<a href="../ko/knowledge.html">docs/ko/knowledge.html</a></p>
+
+<div class="toc">
+<b>Contents</b><br>
+1. <a href="#s1">What this project does</a><br>
+2. <a href="#s2">What happens when you press one key — the layout pipeline</a><br>
+3. <a href="#s3">Why it was slow, and how caches saved it</a><br>
+4. <a href="#s4">Fingerprints — telling "nothing changed" quickly</a><br>
+5. <a href="#s5">Keeping the cache alive across undo — carrying the engine over</a><br>
+6. <a href="#s6">Restartable pagination</a><br>
+7. <a href="#s7">What finishing it taught us — checkpoint traps and the power of sharing</a><br>
+8. <a href="#s8">The secret of Korean input — IME composition and grouping undo</a><br>
+9. <a href="#s9">A serial number hidden in the fingerprint — the cache that dies quietly</a><br>
+10. <a href="#s10">Glyphs know where they came from — source maps and table cell editing</a><br>
+11. <a href="#s11">Deleting several paragraphs — siblings, scattering, and transactions</a><br>
+12. <a href="#s12">Finishing the editor — a record of reuse</a><br>
+13. <a href="#s13">From prototype to product — what M0-M2 taught us</a><br>
+</div>
+
+<h2 id="s1">1. What this project does</h2>
+<p>
+We are building a lightweight editor that reads a .docx file, <b>draws it in
+the browser like a real sheet of paper, and lets you type on it directly</b>.
+The heavy computation — placing glyphs, breaking pages — is done by Rust
+compiled to
+<span class="term" title="A binary format that lets code written in Rust run in the browser">wasm</span>,
+and the drawing is SVG (vector graphics). The layout engine is the
+open-source <code>rdocx</code>, and the improvements we need are proposed
+back to upstream.
+</p>
+
+<h2 id="s2">2. What happens when you press one key — the layout pipeline</h2>
+<p>
+Every time a word processor inserts a single character it has to work out
+again: "how many lines is this paragraph now? If it grew a line, does the
+rest push onto the next page?" That whole computation is called a
+<b>relayout</b>. Its stages are these.
+</p>
+
+<figure>
+<svg viewBox="0 0 780 150" role="img" aria-label="Layout pipeline diagram">
+  <g>
+    <rect class="bx" x="10"  y="40" width="130" height="46" rx="8"/>
+    <text x="75" y="60" text-anchor="middle" font-size="13">Document (XML)</text>
+    <text x="75" y="77" text-anchor="middle" font-size="11" class="mut">what is inside .docx</text>
+    <rect class="bx" x="175" y="40" width="150" height="46" rx="8"/>
+    <text x="250" y="60" text-anchor="middle" font-size="13">Build blocks</text>
+    <text x="250" y="77" text-anchor="middle" font-size="11" class="mut">paragraphs into lines</text>
+    <rect class="bx" x="360" y="40" width="150" height="46" rx="8"/>
+    <text x="435" y="60" text-anchor="middle" font-size="13">Pagination</text>
+    <text x="435" y="77" text-anchor="middle" font-size="11" class="mut">blocks onto pages</text>
+    <rect class="bx" x="545" y="40" width="100" height="46" rx="8"/>
+    <text x="595" y="60" text-anchor="middle" font-size="13">Post-pass</text>
+    <text x="595" y="77" text-anchor="middle" font-size="11" class="mut">fill page numbers</text>
+    <rect class="bx" x="680" y="40" width="90" height="46" rx="8"/>
+    <text x="725" y="60" text-anchor="middle" font-size="13">SVG render</text>
+    <text x="725" y="77" text-anchor="middle" font-size="11" class="mut">draw the screen</text>
+    <path class="ln" d="M140 63 h30" marker-end="url(#ar)"/>
+    <path class="ln" d="M325 63 h30" marker-end="url(#ar)"/>
+    <path class="ln" d="M510 63 h30" marker-end="url(#ar)"/>
+    <path class="ln" d="M645 63 h30" marker-end="url(#ar)"/>
+    <text x="250" y="120" text-anchor="middle" font-size="11" class="mut">includes shaping: glyph forms and widths from the font</text>
+    <text x="435" y="120" text-anchor="middle" font-size="11" class="mut">decides where page 3 ends</text>
+  </g>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+</svg>
+<figcaption>This entire pipeline runs again on every keystroke.</figcaption>
+</figure>
+
+<dl>
+<dt><b>Block</b></dt>
+<dd>One paragraph, fully line-broken to the page width. A finished piece that
+says "this paragraph is these three lines". A table is one block too.</dd>
+<dt><b>Shaping</b></dt>
+<dd>Asking the font file to turn a string into actual glyph shapes and
+per-glyph widths. Scripts where letters join up — Korean, Arabic — make this
+more expensive than it sounds.</dd>
+<dt><b>Pagination</b></dt>
+<dd>Filling finished blocks onto a page from the top and moving to the next
+page when one overflows. This is where "how many pages is this" is decided.</dd>
+</dl>
+
+<h2 id="s3">3. Why it was slow, and how caches saved it</h2>
+<p>
+The first measurement on a 63-page document was <b>1,144ms per keystroke</b>.
+Over a second, which makes typing impossible. Nearly all of it turned out to
+be the cost of doing the same work from scratch every time.
+</p>
+<table>
+<tr><th>Culprit</th><th>What it did</th><th class="num">Cost</th></tr>
+<tr><td>System font scan</td><td>re-read every font installed on the machine, every time</td><td class="num">~750ms</td></tr>
+<tr><td>Font file copies</td><td>re-read and copied a 13-20MB Korean font file every time</td><td class="num">~230ms</td></tr>
+<tr><td>Rebuilding blocks</td><td>re-broke all 700 paragraphs, including untouched ones</td><td class="num">~100ms</td></tr>
+<tr><td>Pagination</td><td>redistributed all 63 pages</td><td class="num">~19ms</td></tr>
+</table>
+<p>
+Every fix is the same idea — <b>store what you computed once, and hand back
+the stored copy when the same work comes around again.</b> The font scan
+became once per process; font files are read once per path; shaping results
+are stored under a (font, string, size) key; blocks are reused whenever the
+paragraph's content has not changed. Those four caches took it from
+<b>1,144ms to 101ms</b>, and the work in sections 4 and 5 took it to
+<b>37ms</b>.
+</p>
+<div class="box">
+<b>The lesson</b> — an editor is not a converter. Costs that are invisible
+when you convert a file once become cost per keystroke when they repeat on
+every key. So performance work on an editor is mostly finding the repeated
+work and caching it.
+</div>
+
+<h2 id="s4">4. Fingerprints — telling "nothing changed" quickly</h2>
+<p>
+Comparing a whole paragraph character by character to answer "is this the
+same as last time?" is itself slow. Instead the paragraph's content is
+<b>summarized into one large number</b>. That summary is called a
+<span class="term" title="A summary number that changes completely when the input changes even slightly">hash</span>,
+or a fingerprint. Same content, same fingerprint; different content,
+(effectively certainly) a different fingerprint. One number comparison
+settles same or different.
+</p>
+<figure>
+<svg viewBox="0 0 700 130" role="img" aria-label="Fingerprint comparison diagram">
+  <rect class="bx" x="10" y="15" width="240" height="44" rx="8"/>
+  <text x="130" y="35" text-anchor="middle" font-size="12">"Good morning. The meeting today…"</text>
+  <text x="130" y="51" text-anchor="middle" font-size="11" class="mut">content + formatting + width</text>
+  <rect class="hot" x="330" y="15" width="160" height="44" rx="8"/>
+  <text x="410" y="42" text-anchor="middle" font-size="13">0x7A3F…C2</text>
+  <path class="acc" d="M250 37 h75" marker-end="url(#ar2)"/>
+  <text x="290" y="30" text-anchor="middle" font-size="11" class="mut">hash</text>
+  <rect class="bx" x="10" y="72" width="240" height="44" rx="8"/>
+  <text x="130" y="92" text-anchor="middle" font-size="12">"Good morning. The meeting today…"</text>
+  <text x="130" y="108" text-anchor="middle" font-size="11" class="mut">same paragraph, next keystroke</text>
+  <rect class="hot" x="330" y="72" width="160" height="44" rx="8"/>
+  <text x="410" y="99" text-anchor="middle" font-size="13">0x7A3F…C2</text>
+  <path class="acc" d="M250 94 h75" marker-end="url(#ar2)"/>
+  <text x="560" y="60" font-size="13">same print =</text>
+  <text x="560" y="80" font-size="13"><tspan fill="var(--accent)">cache hit!</tspan></text>
+  <path class="ln" d="M495 37 c 30 0 30 15 45 20"/>
+  <path class="ln" d="M495 94 c 30 0 30 -15 45 -20"/>
+  <defs>
+    <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+</svg>
+<figcaption>Same fingerprint, and last time's block is handed straight back.</figcaption>
+</figure>
+<p>
+At first we printed the whole paragraph structure to a debug string
+(<code>format!("{:?}")</code>) and hashed that — and building the string alone
+cost ~20ms per keystroke. So we wrote a <b>dedicated worker</b>: body text is
+hashed as raw bytes, and only small structures like formatting go through a
+debug string. It summarizes the same thing for a fraction of the cost.
+</p>
+<div class="caveat">
+<b>The trap in caching</b> — if something is <i>missing</i> from the cache key
+(the fingerprint), the cache says "unchanged" for something that did change
+and hands back a stale result. Example: the "3." in a numbered list depends
+not on the paragraph itself but on <i>how many paragraphs came before it</i>,
+which a content-only fingerprint misses. So numbered paragraphs are excluded
+from the block cache. Half of cache design is deciding what goes in the key.
+</div>
+
+<h2 id="s5">5. Keeping the cache alive across undo — carrying the engine over</h2>
+<p>
+Undo restores a whole previous document state, which means constructing a new
+document object. The caches (the shaping memo, the block cache) hung off the
+engine inside the <i>old</i> object, so building a new one
+<b>threw the entire cache away</b>. The first relayout after an undo was
+about twice as slow as typing.
+</p>
+<p>
+The fix is like taking your furniture with you when you move: before swapping
+the document object, <b>pull the engine (caches included) out of the old one
+and put it into the new one</b>. Two APIs do that
+(<code>take_layout_engine</code> / <code>set_layout_engine</code>). The caches
+are keyed by content, so they are safe no matter which document object they
+hang off. Result: undo and redo run at typing speed (75-91ms in wasm).
+</p>
+
+<h2 id="s6">6. Restartable pagination (done — 37ms to 24-30ms per keystroke)</h2>
+<p>
+One large remaining chunk of the per-keystroke cost was pagination
+(12-15ms). Change a single character and <b>all 63 pages</b> get
+redistributed. But think about it: edit a paragraph on page 5 and pages 1-4
+cannot possibly change, and if the line count holds, neither can page 6
+onward.
+</p>
+<figure>
+<svg viewBox="0 0 760 210" role="img" aria-label="Restartable pagination diagram">
+  <text x="10" y="22" font-size="13" font-weight="bold">Before the edit (last result, held in the cache)</text>
+  <g>
+    <rect class="bx" x="10"  y="34" width="66" height="88" rx="6"/>
+    <rect class="bx" x="86"  y="34" width="66" height="88" rx="6"/>
+    <rect class="bx" x="162" y="34" width="66" height="88" rx="6"/>
+    <rect class="bx" x="238" y="34" width="66" height="88" rx="6"/>
+    <rect class="bx" x="314" y="34" width="66" height="88" rx="6"/>
+    <rect class="bx" x="390" y="34" width="66" height="88" rx="6"/>
+    <text x="43"  y="83" text-anchor="middle" font-size="12">p.1</text>
+    <text x="119" y="83" text-anchor="middle" font-size="12">p.2</text>
+    <text x="195" y="83" text-anchor="middle" font-size="12">p.3</text>
+    <text x="271" y="83" text-anchor="middle" font-size="12">p.4</text>
+    <text x="347" y="83" text-anchor="middle" font-size="12">p.5</text>
+    <text x="466" y="83" font-size="12" class="mut">… through p.63</text>
+    <circle cx="238" cy="130" r="5" fill="var(--accent)"/>
+    <text x="238" y="150" text-anchor="middle" font-size="11" class="mut">checkpoint</text>
+    <text x="238" y="165" text-anchor="middle" font-size="11" class="mut">(block k starts page 4 cleanly)</text>
+    <text x="347" y="28" text-anchor="middle" font-size="12" fill="var(--accent)">✎ edit here</text>
+  </g>
+  <g>
+    <rect class="hot" x="10" y="176" width="294" height="26" rx="6"/>
+    <text x="157" y="194" text-anchor="middle" font-size="12">p.1-3: reused as-is (a handle, not a copy)</text>
+    <rect class="bx" x="314" y="176" width="142" height="26" rx="6" stroke="var(--accent)" stroke-dasharray="4 3"/>
+    <text x="385" y="194" text-anchor="middle" font-size="12">only p.4-5 redone</text>
+    <rect class="hot" x="466" y="176" width="284" height="26" rx="6"/>
+    <text x="608" y="194" text-anchor="middle" font-size="12">p.6-63: spliced back if the count holds</text>
+  </g>
+</svg>
+<figcaption>Only the pages around the change are rebuilt; the rest are reused.</figcaption>
+</figure>
+<p>It takes three ingredients.</p>
+<ol>
+<li><b>The list of block fingerprints</b> — comparing this keystroke's
+fingerprints against the previous ones side by side gives you the first block
+that differs (the divergence point).</li>
+<li><b>Checkpoints</b> — during pagination we record the points where "this
+block started a fresh page cleanly". Cleanly means the paragraph was not
+split across the page boundary and no footnote was carried over. At such a
+point the paginator's state is effectively empty, so <b>restarting</b> from
+it later produces the same result.</li>
+<li><b>Splicing</b> — while redistributing after the divergence point, if we
+reach a point where the remaining blocks are identical to last time and the
+current page number matches last time's, we attach the previous tail pages
+wholesale and stop. Typing usually does not change the page count, so in
+practice only <b>one or two pages</b> get redistributed.</li>
+</ol>
+<div class="caveat">
+<b>Why this needs care</b> — pages are influenced by their surroundings. A
+keep-with-next property looks ahead at the first line height of the <i>next</i>
+block; a floating drawing can put an image from a later block onto an earlier
+page; footnotes can continue across a page. So documents with those features
+(floating drawings, multiple sections, and so on) safely <b>fall back to full
+pagination</b>, and checkpoints are only taken outside the range of such
+effects. And a test always enforces "cached path result == full recomputation
+result".
+</div>
+<p>
+Result: pagination went from 12-15ms to <b>1-3ms</b>. Of 63 pages only the
+four around the change are actually redistributed ("29 prefix + 4 rebuilt +
+30 spliced"). Tables are cached under a fingerprint key like paragraphs, and
+the whole keystroke came to <b>24-30ms on average</b> — meeting the 30ms gate
+we had set.
+</p>
+
+<h2 id="s7">7. What finishing it taught us — checkpoint traps and the power of sharing</h2>
+
+<h3>Trap 1: where to take the checkpoint</h3>
+<p>
+The first implementation said "at the top of the loop over blocks, if the
+page is clean, take a checkpoint". Running it produced <b>not one
+checkpoint</b>. The reason: page boundaries do not happen between loop
+iterations. "This paragraph does not fit in the remaining space → close the
+page → place the paragraph on a new page" happens <i>inside the paragraph
+placement function</i>, so by the time control returns to the top of the loop
+the new page already has content on it. The checkpoint had to be taken
+<b>at the entry to the block placement function</b>. Lesson: when you record
+state, check in the actual control flow when that state really exists. The
+loop in your head and the real control flow are different.
+</p>
+
+<h3>Trap 2: save the work, then spend it all on copying</h3>
+<p>
+Even after reuse worked, total time went <b>up</b>. The culprit was copying:
+for the cache to hold pages it needs a copy to hand to the caller, and deep
+copying 63 pages cost ~12ms — about what the pagination saved.
+</p>
+<figure>
+<svg viewBox="0 0 720 150" role="img" aria-label="Deep copy versus sharing">
+  <text x="10" y="20" font-size="13" font-weight="bold">Deep copy</text>
+  <rect class="bx" x="10" y="30" width="150" height="40" rx="6"/>
+  <text x="85" y="55" text-anchor="middle" font-size="12">pages (several MB)</text>
+  <rect class="bx" x="230" y="30" width="150" height="40" rx="6"/>
+  <text x="305" y="55" text-anchor="middle" font-size="12">an identical copy</text>
+  <path class="ln" d="M160 50 h65" marker-end="url(#ar3)"/>
+  <text x="195" y="42" text-anchor="middle" font-size="11" class="mut">~12ms</text>
+  <text x="420" y="20" font-size="13" font-weight="bold">Sharing (Arc)</text>
+  <rect class="hot" x="420" y="30" width="150" height="40" rx="6"/>
+  <text x="495" y="55" text-anchor="middle" font-size="12">one original</text>
+  <rect class="bx" x="620" y="10" width="90" height="28" rx="6"/>
+  <text x="665" y="29" text-anchor="middle" font-size="11">cache →</text>
+  <rect class="bx" x="620" y="46" width="90" height="28" rx="6"/>
+  <text x="665" y="65" text-anchor="middle" font-size="11">result →</text>
+  <path class="acc" d="M620 24 c-20 0 -30 10 -50 16"/>
+  <path class="acc" d="M620 60 c-20 0 -30 -5 -50 -10"/>
+  <text x="495" y="95" font-size="11" class="mut" text-anchor="middle">both point at the same original — copying costs ~0ms</text>
+  <defs>
+    <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+</svg>
+<figcaption>When two places use the same data, they can share a reference instead of copying.</figcaption>
+</figure>
+<p>
+The fix is Rust's <code>Arc</code>, a reference-counted shared pointer:
+instead of copying a page, both sides hold a handle to the same original.
+Copying drops to 0ms, and only when someone actually has to <i>modify</i> a
+page (substituting a page-number field, say) is that one page copied at that
+moment — copy on write. Lesson: <b>a cache only really pays once you count
+the cost of getting the data back out</b>. And performance work has to be
+measured at every step — "it must be faster now" was wrong twice.
+</p>
+
+<h2 id="s8">8. The secret of Korean input — IME composition and grouping undo</h2>
+<p>
+In English one key is one character, but Korean assembles several keys into
+one syllable: <b>ㅎ + ㅏ + ㄴ = 한</b>. The OS program that does the assembling
+is an
+<span class="term" title="Input Method Editor — an input program that assembles characters a keyboard cannot type directly">IME</span>.
+The browser reports the assembly through three events:
+<code>compositionstart</code> → <code>compositionupdate</code> (in progress —
+it keeps changing through "ㅎ", "하", "한") → <code>compositionend</code>
+(committed).
+</p>
+<p>
+On every update the editor reflects the change on screen by deleting the
+previous composing character and inserting the new one
+(<code>replace_range</code>). A full relayout runs for each of those, but
+thanks to the performance work in sections 3-7 that is tens of milliseconds
+per key — fast enough to feel live. <b>The performance work is what made the
+feature possible</b>, in that order.
+</p>
+<figure>
+<svg viewBox="0 0 740 168" role="img" aria-label="IME composition and undo grouping diagram">
+  <text x="10" y="20" font-size="13" font-weight="bold">Composition events</text>
+  <rect class="bx" x="10" y="32" width="90" height="36" rx="6"/>
+  <text x="55" y="55" text-anchor="middle" font-size="13">"ㅎ"</text>
+  <rect class="bx" x="130" y="32" width="90" height="36" rx="6"/>
+  <text x="175" y="55" text-anchor="middle" font-size="13">"하"</text>
+  <rect class="hot" x="250" y="32" width="90" height="36" rx="6"/>
+  <text x="295" y="55" text-anchor="middle" font-size="13">"한" committed</text>
+  <path class="ln" d="M100 50 h25" marker-end="url(#ar4)"/>
+  <path class="ln" d="M220 50 h25" marker-end="url(#ar4)"/>
+  <text x="55" y="86" text-anchor="middle" font-size="11" class="mut">update</text>
+  <text x="175" y="86" text-anchor="middle" font-size="11" class="mut">update</text>
+  <text x="295" y="86" text-anchor="middle" font-size="11" class="mut">end</text>
+  <path class="acc" d="M10 100 h330" stroke-dasharray="5 4"/>
+  <text x="175" y="122" text-anchor="middle" font-size="12" fill="var(--accent)">the whole thing is one undo unit</text>
+  <text x="430" y="20" font-size="13" font-weight="bold">Undo, before the fix</text>
+  <text x="430" y="48" font-size="12" class="mut">Ctrl+Z → back to "하"</text>
+  <text x="430" y="70" font-size="12" class="mut">Ctrl+Z → back to "ㅎ"</text>
+  <text x="430" y="92" font-size="12" class="mut">Ctrl+Z → finally gone (three!)</text>
+  <text x="430" y="128" font-size="13" font-weight="bold">Undo, fixed</text>
+  <text x="430" y="150" font-size="12">One Ctrl+Z removes all of "한" ✓</text>
+  <defs>
+    <marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+</svg>
+<figcaption>Intermediate composition steps should show on screen but leave a single entry in undo history.</figcaption>
+</figure>
+<p>
+The core problem was <b>the unit of undo</b>. The editor pushes a document
+snapshot onto the undo stack before every edit, and the intermediate
+composition steps are edits too — so a single "한" pushed three snapshots.
+The fix: push one snapshot at composition start and set a flag that suppresses
+pushes during composition (<code>begin_composition</code> /
+<code>end_composition</code>). If the composition is cancelled (it ends with
+an empty string), the document is identical to the snapshot, so that snapshot
+is dropped as well — otherwise Ctrl+Z would have one press where nothing
+appears to happen.
+</p>
+<div class="box">
+<b>What we learned</b> — what the user sees (screen updates) and what history
+records (undo units) are separate axes. "Show it finely, record it coarsely"
+is basic editor grammar: the same principle later applies to dragging,
+autocorrect and paste normalization. Verification follows the same split:
+intermediate states are checked by reading the screen text <i>between</i>
+events, and undo is checked by counting presses (7 automated scenarios, all
+passing).
+</div>
+<h3>Addendum: the preedit underline belongs on the glass, not in the document</h3>
+<p>
+Drawing the underline under composing text by adding and removing an
+underline <i>format</i> in the document would make undo consistency hard all
+over again. Instead we used the same mechanism as the caret and the selection
+highlight: draw the underline only on a transparent "pane of glass" laid over
+the document (an SVG overlay). The document never knows the underline exists,
+so there is nothing to remove whether the composition commits or is cancelled.
+Splitting the UI into <b>"transient marks on the overlay, permanent content
+in the document"</b> makes state management dramatically simpler.
+</p>
+
+<h2 id="s9">9. A serial number hidden in the fingerprint — the cache that dies quietly</h2>
+<p>
+Adding a page-number footer ("Page N") to the benchmark made the caches
+<b>miss across the board</b>. The diagnostic log said "the environment
+changed" on every keystroke, but nothing in the document had changed.
+Splitting the hash per component showed that only the footer hash differed
+each time.
+</p>
+<figure>
+<svg viewBox="0 0 720 150" role="img" aria-label="A serial number mixed into the fingerprint">
+  <text x="10" y="20" font-size="13" font-weight="bold">The same footer, parsed twice</text>
+  <rect class="bx" x="10" y="34" width="290" height="40" rx="6"/>
+  <text x="155" y="52" text-anchor="middle" font-size="12">Page {PAGE field} … source_id: <tspan fill="var(--accent)">1041</tspan></text>
+  <text x="155" y="68" text-anchor="middle" font-size="11" class="mut">parsed on the first relayout</text>
+  <rect class="bx" x="10" y="88" width="290" height="40" rx="6"/>
+  <text x="155" y="106" text-anchor="middle" font-size="12">Page {PAGE field} … source_id: <tspan fill="var(--accent)">1178</tspan></text>
+  <text x="155" y="122" text-anchor="middle" font-size="11" class="mut">parsed again on the next one</text>
+  <path class="ln" d="M310 54 h60"/>
+  <path class="ln" d="M310 108 h60"/>
+  <rect class="hot" x="380" y="34" width="140" height="40" rx="6"/>
+  <text x="450" y="59" text-anchor="middle" font-size="13">hash 0x3A…</text>
+  <rect class="hot" x="380" y="88" width="140" height="40" rx="6"/>
+  <text x="450" y="113" text-anchor="middle" font-size="13">hash 0x9C…</text>
+  <text x="550" y="80" font-size="13">→ same content,</text>
+  <text x="550" y="100" font-size="13">different print = <tspan fill="var(--accent)">no cache</tspan></text>
+</svg>
+<figcaption>An internal serial number, fresh on every parse, had leaked into the hash input.</figcaption>
+</figure>
+<p>
+The culprit: <code>source_id</code>, a debugging aid on the field struct that
+takes a new number from a global counter on every parse. Our fingerprint
+hashed the struct's whole debug output, so <b>a serial number unrelated to
+content changed the print every time</b>. Silent failures like this are the
+dangerous kind: the result stays correct, it is merely slow. The fix: hash
+only <b>what layout actually reads</b> from a field (the instruction string,
+the stored display value, the dirty flag) instead of its debug output.
+</p>
+<div class="box">
+<b>Two lessons.</b> (1) Using a debug string as a cache key for convenience is
+signing something without knowing what is inside it. Put only meaningful
+fields in the key, explicitly. (2) Caches die quietly — correctness tests do
+not catch it. Plant a diagnostic that shows <i>whether the cache hit</i>
+(ours is <code>RDOCX_TIMING</code>) from the start and the problem shows up
+immediately as a number ("env changed" ten times).
+</div>
+
+<h2 id="s10">10. Glyphs know where they came from — source maps and table cell editing</h2>
+<p>
+Working out "which paragraph, which character offset" a glyph on screen
+corresponds to is called <b>reverse mapping</b>. Until recently the layout
+output carried no origin information, so we <i>searched</i> the document text
+for the on-screen string and guessed the position (text matching). Two
+occurrences of the same wording could be confused, and table cells were given
+up on entirely.
+</p>
+<figure>
+<svg viewBox="0 0 740 170" role="img" aria-label="Source map reverse mapping diagram">
+  <text x="10" y="20" font-size="13" font-weight="bold">Before: text matching (a guess)</text>
+  <rect class="bx" x="10" y="30" width="150" height="36" rx="6"/>
+  <text x="85" y="53" text-anchor="middle" font-size="12">screen: "Border"</text>
+  <rect class="bx" x="230" y="30" width="190" height="36" rx="6"/>
+  <text x="325" y="47" text-anchor="middle" font-size="11">search the document for "Border"…</text>
+  <text x="325" y="61" text-anchor="middle" font-size="11" class="mut">ambiguous · cells not searchable</text>
+  <path class="ln" d="M160 48 h65" marker-end="url(#ar5)"/>
+  <text x="10" y="105" font-size="13" font-weight="bold">Now: source maps (a certificate)</text>
+  <rect class="bx" x="10" y="115" width="150" height="36" rx="6"/>
+  <text x="85" y="132" text-anchor="middle" font-size="12">screen: "Border"</text>
+  <text x="85" y="146" text-anchor="middle" font-size="10" class="mut">+ origin (node 41, 0..6)</text>
+  <rect class="hot" x="230" y="115" width="260" height="36" rx="6"/>
+  <text x="360" y="132" text-anchor="middle" font-size="12">path d/8.1.0.0 = table 8 → row 1, col 0</text>
+  <text x="360" y="146" text-anchor="middle" font-size="10" class="mut">exact down to the character range</text>
+  <path class="acc" d="M160 133 h65" marker-end="url(#ar5)"/>
+  <rect class="bx" x="530" y="115" width="180" height="36" rx="6"/>
+  <text x="620" y="138" text-anchor="middle" font-size="12">edit inside the cell ✓</text>
+  <path class="acc" d="M490 133 h35" marker-end="url(#ar5)"/>
+  <defs>
+    <marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+</svg>
+<figcaption>Since upstream v0.8.0 every glyph comes out carrying a certificate of origin (a SourceSpan).</figcaption>
+</figure>
+<p>
+Provenance — the origin tracking we proposed upstream — shipped officially in
+v0.8.0, so every fragment of the layout output now carries a certificate
+saying "I am <i>this character range</i> of <i>this paragraph</i> in the
+document". We turn that certificate into a path string ("d/8.1.0.0" = body
+item 8, a table, row 1, column 0, first paragraph), attach it to each glyph on
+screen, and on a click edit the document directly through that path. Once
+guessing became certainty, <b>table cell editing simply opened up</b> —
+typing, Korean composition, replacing a selection, undo, all identical to the
+body.
+</p>
+<div class="box">
+<b>What we learned</b> — when designing addresses, separate "the nth thing on
+screen right now" (a result-local id) from "where this is in the document
+structure" (a path). Ids change with every layout, but paths are stable across
+an edit, so the caret and selection state on the JS side is held purely as
+paths. And when infrastructure (the source map) is proposed upstream and
+becomes official, the feature on top of it (cell editing) is finished simply
+by removing the workaround — a workaround is debt, and contributing the
+infrastructure is repaying it.
+</div>
+<h3>Addendum: headers live in a different drawer</h3>
+<p>
+The same path scheme opened header and footer editing. One difference: body
+paragraphs live in the in-memory document tree, but a header is serialized
+into a <b>separate XML part</b> inside the .docx — a different drawer. So
+editing becomes three steps, "take it out (parse) → change it → put it back
+(reserialize)", and the part's relationship list is preserved so that other
+things in the drawer (image references, for example) are left alone. The story
+prefix of the path (<code>d/ h/ f/</code>) already says which drawer it is, so
+the editing operations themselves are literally the same code in all three
+places. Characters that are <i>computed</i>, like a footer's page number, have
+no certificate of origin (by design), so clicking them places no caret — being
+uneditable is itself the safety mechanism.
+</p>
+<h3>Addendum 2: footnotes are a typed field, endnotes are a drawer — and the source of truth</h3>
+<p>
+Footnote and endnote editing opened the last of the six stories. An amusing
+asymmetry: within the same library, <b>footnotes lived as a typed structure in
+memory</b> (modified in place, nothing to take out), while <b>endnotes lived
+in a drawer (an XML part) like headers</b>. Thanks to path dispatch our
+editing code does not have to know the difference.
+</p>
+<p>
+That did expose an existing defect. When laying out footnotes the engine read
+only the <i>drawer</i>, so a footnote just added in memory and not yet saved
+did not appear on screen. When the same data lives in two places you have to
+decide <b>which one is the source of truth</b> and make every read go there —
+if the structure is "lift the drawer into memory on open, edit in memory",
+then reads must look at memory too. This inconsistency never showed in a
+document converter (which always reads the saved copy) and <b>surfaced the
+moment a live editor was put on top</b>. A new consumer is the best tool for
+testing old code's hidden assumptions.
+</p>
+
+<h3>Addendum 3: promoting endnotes — a refactor that removes the asymmetry</h3>
+<p>
+We eventually removed the asymmetry from addendum 2. Endnotes became the same
+kind of <b>typed field</b> as footnotes. It is called a promotion because the
+status of the data changes: an XML blob that used to be parsed out of a drawer
+and reserialized back on every edit becomes a struct parsed once at open time
+and resident in memory.
+</p>
+<pre class="diagram">
+Before promotion (drawer)            After promotion (typed field)
+─────────────────────────            ─────────────────────────────
+per edit:                            once at open:
+  read the part XML                    part XML → struct
+  → parse → modify                   per edit:
+  → serialize → write back             modify the struct in place
+                                         (just mark it dirty)
+on save:                             on save:
+  already in the part                  if dirty, struct → XML once
+</pre>
+<p>
+Three rules come with a promotion, and they are the point. (1) <b>Lift on
+open</b>: if the part exists, parse it into the field. (2) <b>Reads look at
+the field</b>: layout sees edits before they are saved (the footnote defect
+from addendum 2 never existed for endnotes). (3) <b>Save only when dirty</b>:
+if nothing was edited, the original part bytes are preserved untouched — the
+courtesy of not casually reserializing a document you did not write.
+</p>
+<p>
+The payoff was immediate: Enter (split) and Backspace (merge) in endnotes came
+out as the same few-line functions as footnotes, and the two branches on the
+wasm side that used to refuse with "endnotes unsupported" became calls into a
+real implementation. Data of the same shape has to be handled by code of the
+same shape for special cases to disappear.
+</p>
+<p>
+Insert and delete (Ctrl+Alt+E, Ctrl+Alt+D) followed by moving the footnote
+version over almost verbatim — after the promotion the only thing that
+distinguishes the two kinds of note in code is the tag name of the reference
+run (<code>footnoteReference</code> vs <code>endnoteReference</code>). On the
+shortcut side we unified in the opposite direction: delete is a single
+Ctrl+Alt+D, and which kind of note it removes is decided by <b>the prefix of
+the path the caret sits on</b> (fn/, en/). To the user this is one concept —
+"delete the thing I am in" — not two shortcuts by note type.
+</p>
+
+<h2 id="s11">11. Deleting several paragraphs — siblings, scattering, and transactions</h2>
+<p>
+The moment a drag selection leaves a single paragraph, "delete" turns into a
+hard problem, because where the selection starts and ends produces two
+completely different shapes.
+</p>
+<pre class="diagram">
+Shape 1: siblings                     Shape 2: scatter
+neighbouring paragraphs in one box    different boxes (cell → next cell)
+
+  ┌─ cell ────────┐                    ┌─ cell A ┐ ┌─ cell B ┐
+  │ para 1  Te[xt  │                    │ T[ext   │ │ Gl]yph  │
+  │ para 2  ab]cd  │                    └─────────┘ └─────────┘
+  └───────────────┘
+  → like Word: cut head and tail,      → cell structure cannot merge!
+    empty the middle, merge into one      strip text out of each paragraph
+</pre>
+<p>
+<b>Shape 1</b> is the same algorithm whatever the box is: cut the tail of the
+first paragraph, cut the head of the last, empty the paragraphs in between,
+then merge them all into the first. Body, table cells, headers, footnotes and
+endnotes already shared one operation, "merge into the previous sibling"
+(section 10, addendum 3), so the new code came out as a single 40-line
+function that <i>never asks which box it is in</i>. Strip the last number off
+the path and you have the box key; equal keys mean siblings.
+</p>
+<p>
+<b>Shape 2</b> is one Word does not merge structurally either — delete a
+selection crossing cells and the text disappears while the table stays. We use
+the same approximation: walk the on-screen hit list (which paragraph and
+character offset each glyph is) to collect the covered range per paragraph,
+and hand wasm one list saying "delete [1..4) of this paragraph, [0..2) of that
+one". Different paragraphs do not shift each other's offsets, so ordering is
+not a concern.
+</p>
+<p>
+The real lesson of this stage is the third one: <b>an operation with several
+steps can fail at several steps</b>. In the test that rejects a body selection
+crossing a table (a table in the middle makes merging impossible), the
+rejection worked — but <i>the first paragraph's tail had already been cut</i>.
+The editing core was structured to "drop the checkpoint on failure and leave
+the document alone", and for single-paragraph operations failure means nothing
+happened, so the defect had hidden for months. The fix is the transaction rule
+itself: <b>on failure, roll back to the checkpoint</b>. In an editor, "partial
+success" is another way of spelling data corruption.
+</p>
+
+<h3>Addendum: the screen is one sheet but the document has layers — and events only come when something moves</h3>
+<p>
+What caret ↑/↓ taught us: you must not look for "the line directly below" on
+screen. At the bottom of a page, footnote blocks and the footer are
+<i>drawn</i> after the body, but they are not the body's next line — they are
+lines of a <b>different story</b>. In Word, pressing ↓ on the last body line
+skips the footnotes and goes to the body of the next page. So line movement
+looks for <b>"the nearest line in the same story"</b>, not the nearest line —
+a filter that is one path-prefix comparison (d/, fn/, en/…), and that restores
+to a coordinate search the logical structure of the document that coordinates
+do not carry.
+</p>
+<p>
+What drag auto-scroll taught us: browser events arrive only when
+<b>something changes</b>. Hold the mouse button and park the pointer
+<i>motionless</i> at the edge of the screen and no more mousemove events come.
+So "keep scrolling while at the edge" cannot be built out of event handlers
+alone; you remember the last pointer position and let a requestAnimationFrame
+loop scroll and re-extend the selection every frame. Events are
+<i>notifications</i> of a state change and continuous behaviour belongs to a
+loop — an old dichotomy in UI code.
+</p>
+
+<h3>Addendum 2: the zero-width character — when a selection covers a marker</h3>
+<p>
+A footnote marker (²) is one character on screen, but in our text offset space
+it has <b>zero width</b> (a reference run has no text). So deleting a selection
+used to leave the marker behind as a ghost — a delete that only trims text has
+nothing to catch. Word deletes the whole note when its marker is inside the
+selection.
+</p>
+<p>
+The fix is to ask separately, before deleting, "which markers does this range
+cover?". Define a marker's position as <i>the number of text characters before
+it</i> and the condition for a range [start, end) covering it is
+start &lt; pos &lt; end. Two interesting corners: (1) because the width is
+zero, <b>a marker exactly on the boundary cannot in principle be told inside
+from outside</b> (the caret before and after the marker share one offset), so
+we conservatively delete only when it is definitely interior; (2) note removal
+can be done <b>before</b> the text deletion — a reference run is zero width,
+so it shifts no character offsets at all. Freedom from ordering keeps the code
+simple.
+</p>
+<p>
+The last piece of the puzzle was <b>a body selection crossing a table</b>. The
+sibling algorithm's "empty the middle paragraphs" fails when the middle is a
+table (that is where section 11's atomic rejection bites). But at the top
+level of the body the sibling index <i>is</i> the body content index, so
+<b>removing the middle outright</b> instead of emptying it makes paragraphs
+and tables disappear through the same code — the same semantics as Word
+deleting the table with the selection. Collect the footnotes referenced inside
+the doomed table and delete them along with it, and that is all. The edge case
+we had left as a rejection turned out, one layer down in the data structure,
+to be the simpler path.
+</p>
+
+<h2 id="s12">12. Finishing the editor — a record of reuse</h2>
+<p>
+Almost everything after S11 — re-measurement and lazy rendering, find and
+replace, the clipboard, formatting, table structure, images — was built by
+reusing and combining operations that already existed. The notes below are the
+design lessons that kept recurring.
+</p>
+
+<h3>Measuring again after ten stages — two answers</h3>
+<p>
+After piling on features (IME, editing in all six stories, notes, selection
+editing) we re-ran the performance benchmark from section 3. It gave two
+answers. First, <b>typing was unchanged</b> (native min 23ms, identical to the
+baseline). That the new features were designed orthogonally to the hot path is
+not something you assert — re-measuring is the only way to confirm it. Second,
+<b>the next bottleneck became visible</b>: after an operation that changes the
+paragraph count, like Enter, the browser reported "34 of 63 pages redrawn".
+</p>
+<p>
+Here we <b>got a diagnosis wrong and corrected it</b> — the process itself is
+the lesson, so it stays on the record. The first write-up said "source ids
+shift, so pages with identical content get redrawn". Plausible. But rereading
+the code showed the delta hash never mixed ids in at all, and a probe showed
+typing redrew exactly 1 of 63 pages. The real reason for 34 redrawn pages is
+simple: inserting a paragraph really does <b>push the content of every
+following page down by a line</b>. That is legitimate reflow. Word reflows the
+same way — it just <i>does not draw the pages you cannot see</i>. So the next
+optimization was not about hashing or serialization but about "do we need to
+draw all of this right now?". A plausible diagnosis is only a diagnosis in
+front of the code and a probe — a day where re-measuring did the work twice.
+</p>
+<p>
+That answer is <b>lazy rendering</b>: wasm reports only which pages changed
+(indices), and SVG is pulled per page. Pages near the viewport render
+immediately; the other thirty or so are drained during idle time in 8ms
+slices. The key invariant is "an SVG pulled out always draws the
+<i>current</i> document" — so back-to-back edits never need deferred pages to
+be invalidated, and the drain is correct whenever it runs. Enter's felt cost
+went from 335ms to 211ms and the pages drawn immediately from 34 to 2. We
+finally do what Word always did.
+</p>
+
+<h3>Find is not new state, it is a combination of existing state</h3>
+<p>
+Building Ctrl+F, we tried hard not to invent any new state. "The current
+match" is not a separate concept — it is <b>just the existing selection</b>,
+so typing over a match replaces it (as in Word) and Ctrl+C copies it for free.
+Only the other matches get an orange overlay, and that is the same "pane of
+glass" pattern as the preedit underline (section 8's addendum) — nothing is
+left in the document. Matches going stale after an edit took one line: "if the
+panel is open after an edit, search again". Rather than caching search results
+and managing invalidation rules, <b>making it cheap enough to recompute every
+time</b> (45ms to search 63 pages) was much the simpler design.
+</p>
+<p>
+The interesting part of replace (Ctrl+H) is "replace all = one undo". The
+whole match list goes over in a single wasm call, and it is applied
+<b>from the back</b> — replacing an earlier match in a paragraph shifts the
+offsets of later ones, but going backwards leaves the earlier offsets intact.
+And having made search <b>non-overlapping</b> like Word (the next scan starts
+at the end of the match) becomes the safety net here: replacing "aa" with "b"
+in "aaaa" never rescans the result ("bb") in this single pass, so a
+replacement containing the search term can never loop forever.
+</p>
+
+<h3>Paste is a replay of typing</h3>
+<p>
+We did not design multi-line paste as a new operation. Pasting "one\ntwo\nthree"
+has to be exactly the same thing as <b>typing one, Enter, typing two, Enter,
+typing three</b>. So the implementation is precisely that: insert a line,
+split, move to the next paragraph, repeat — merely wrapped in a single wasm
+call so it is one undo. Being a composition of existing operations (insert and
+split), it works for free in all six stories, including pasting inside a
+footnote. When a new feature is expressed as a replay of existing operations,
+its verification inherits the existing verification too.
+</p>
+<p>
+Paragraph alignment (Ctrl+L/E/R) went the same way. Because text editing had
+been routed from the start through one gate — a paragraph handle shared by all
+six stories (<code>with_paragraph_at</code>) — alignment was a matter of
+putting one <code>set_alignment</code> line through that gate. Body, table
+cell, header, footnote or endnote alike; if the selection spans several
+paragraphs the path list goes over at once, so undo is one step too. Dig one
+good gate and the cost of a new verb stops depending on the number of nouns
+(stories).
+</p>
+
+<h3>Writes must be atomic — the zero-byte incident</h3>
+<p>
+A tooling story. A Python patch script editing a page died on an encoding
+error immediately after <code>open(file, "w")</code>. The problem is that
+<code>"w"</code> <b>truncates the file the moment it opens it</b> — if the
+write then fails, you are left with a zero-byte file containing neither the
+original nor the new content. index.html evaporated exactly that way, and was
+restored from the previous commit in a minute (the moment committing at every
+stage proved to be a safety net). Two lessons: (1) finish conversions that can
+fail (encoding!) <b>before opening the file</b>, and write only once the bytes
+are in hand; (2) better still, write to a temporary file and swap it in — an
+atomic write. Making a half-written state impossible is exactly the principle
+of section 11's edit transaction, applied to build tooling.
+</p>
+
+<h3>Do not touch what you do not understand — and the third guest</h3>
+<p>
+A principle learned adding and removing table rows and columns: pieces of a
+document our model cannot <i>fully</i> represent (raw XML blobs, content
+controls) are preserved with an index recording which row they sat before.
+Insert a row and all those indices are off by one — we could fix them up, but
+moving data we do not understand by guesswork is dangerous. So the answer is
+to <b>refuse structural operations on such tables</b>. "Change only what you
+understand completely, and preserve the rest byte for byte" — this document
+library's founding principle, the same grain as dirty-only saving in section
+10's addendum 3 — repeats here.
+</p>
+<p>
+Image insertion, meanwhile, was almost free to design, because it was the
+<b>third guest</b> of the pattern "split a run at a character offset and
+insert a zero-width special run" (footnote reference → endnote reference →
+image drawing run). A pattern used twice is a coincidence; used three times it
+is structure. At some point the design question for a new feature stops being
+"how do we build this" and becomes "which of our patterns is this the nth
+guest of?".
+</p>
+<p>
+One real-world document taught its own lesson. A hospital billing receipt —
+six tables nested inside tables, 59 vertical merges, 44 rows saying "this row
+is exactly this tall" (hRule=exact), borders and spacing all hidden in the
+table style — exposed six holes in our layout at once (nested tables
+flattened, merged-row height blowup, exact ignored, table style not cascading,
+empty paragraphs falling back to 12pt, cell-anchored stamps lost). Months of
+synthetic demos would never have produced that combination. <b>A real document
+tests the product of your features, not the list of them</b> — and it teaches
+the order to fix them in: 4 pages → 3 → 2 → 1, each defect removed making the
+next one appear in measurable form.
+</p>
+<p>
+The two finishing touches had the same grain. Tab navigation in tables (select
+the next cell; add a row at the last one) was not new code but a
+<b>combination of the add-row operation and a paragraph selection helper</b>,
+and text color was another guest of the same "split the run and set it"
+pattern as font size. Color does have one subtle but principled difference:
+<b>it does not change glyph geometry</b>, so there is no reflow and the
+selection can be kept as is (size reflows the lines, making the selection
+coordinates stale, so it collapses to a caret). Even riding the same pattern,
+the UX details are decided by the physics — by what actually moves.
+</p>
+
+<h2 id="s13">13. From prototype to product — what M0-M2 taught us</h2>
+
+<p>After deciding "the prototype is good enough", the first work was to leave
+the code alone and make the <b>structure</b> fit a product (M0). Only then did
+features (M1) and document features (M2) get stacked on top. The order
+mattered: with the structure in place first, every feature after it landed as
+a small diff.</p>
+
+<h3>13.1 Names and places first — workspace, TypeScript, runner</h3>
+<p>All three M0 stages were work that made the code not one line smarter:
+(1) <code>rdocx-svg-poc</code> → <code>crates/rdoc-core</code> plus a root
+<code>web/</code> workspace; (2) 1,580 lines of inline JS → ten
+<code>web/src/*.ts</code> modules (shared state promoted into a single
+<code>S</code> object, so every cross-module mutation is visible by its
+<code>S.</code> prefix); (3) an ad-hoc test loop →
+<code>web/tests/run.sh</code>. The verification criterion was the same for all
+three: <b>if the battery is green with the suites unmodified, the move was
+pure.</b></p>
+
+<h3>13.2 Korean that looks right on machines with no fonts — open fonts and aliases</h3>
+<p>Because the output SVG embeds glyphs as vectors, <b>the viewing side</b>
+needs no fonts at all. Fonts are needed at exactly one point: wasm layout
+time. So the demo downloads two open fonts (Pretendard, NanumMyeongjo) and
+maps them as <b>aliases</b> onto ~40 commercial family names like 굴림, 돋움,
+바탕 and 궁서. That work uncovered a latent bug — upstream's
+<code>FontFile.family</code> was in fact being ignored (reported as #44) — and
+measurement caught that the naive implementation, duplicating the font bytes
+for each alias, was copying <b>~100MB on every keystroke</b>, which we
+redesigned into an alias API that carries no bytes. The lesson:
+<i>if the same data has to be registered under different names, separate the
+names from the bytes.</i></p>
+
+<h3>13.3 "It saves but you cannot see it" — synthesized bold and italic</h3>
+<p>A user reported that B/I did nothing in the demo. The formatting was stored
+in the document and survived the round trip — the problem was that every
+loaded font was a Regular face, so turning on bold produced the same glyphs.
+We solved it the way Word does: load a real Bold face, and let the renderer
+synthesize the styles that do not exist (Korean italic has no face in the
+ecosystem at all) — bold as a same-color stroke, italic as a skewX. And we
+added <b>visual assertions</b> to the tests; a test that only checks document
+state and never looks at the screen will miss this class of bug forever.</p>
+
+<h3>13.4 Switching views is not editing</h3>
+<p>A distinction learned from track-changes view (S36): drawing the same
+document under a different projection (final ↔ show markup) <b>must not enter
+history</b>. Conversely, enforcing read-only has to be done at <b>the single
+point every mutation passes through (edit())</b>, not in each scattered piece
+of UI, so that features added later are protected automatically.</p>
+
+<h3>13.5 Two accidents caused by tooling — pipes and a shared clone</h3>
+<p>(1) <code>cargo build | tail</code> exits 0 even when the build fails (a
+pipeline's exit code is the last command's). That pushed a commit with a
+broken build and ran tests against stale wasm, twice in one day. The build
+chain now checks <code>${PIPESTATUS[0]}</code>. (2) A fork clone can be shared
+with another project — <code>git add -A</code> swept up someone else's
+uncommitted WIP. Commits now name their files, and <code>git status</code>
+comes first. Both accidents were recovered immediately thanks to
+<b>per-stage verification and an honest log</b>.</p>
+
+<h3>13.6 Growing together with upstream</h3>
+<p>Many fork commits in this stretch became upstream candidates too: font
+aliasing (reported as #44), <code>ensure_list_num</code> for lists, cell
+merge/split, and view-option layout. Conversely, things upstream already had
+(line spacing, page setup, RevisionView) needed no fork changes at all.
+<i>The habit of searching upstream before implementing</i> made several stages
+free — and once we paid tuition by adding a duplicate of a getter that already
+existed, then reverting it.</p>
+
+</body>
+</html>

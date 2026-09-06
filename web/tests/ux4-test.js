@@ -38,7 +38,7 @@ window.__benchResult = "pending";
 
   // 2. ArrowDown from the last body line of page 1 must NOT land in a
   //    header/footnote — with only notes below/next, the caret stays put.
-  const hend = hitFor("d/11"); // — end of PoC page — (last body line, page 1)
+  const hend = hitFor("d/11"); // — end of demo page — (last body line, page 1)
   t.clickAt(hend.page, hend.h.x + 2, hend.h.y - 2);
   const before = t.state().caret;
   press("ArrowDown");

@@ -1,4 +1,4 @@
-//! Native PoC driver: build the demo DOCX, lay it out with system fonts,
+//! Native render driver: build the demo DOCX, lay it out with system fonts,
 //! write per-page SVGs plus rdocx's own PNG renders for comparison.
 
 use std::fmt::Write as _;
@@ -64,8 +64,8 @@ fn main() {
 
     // PDF from the same layout the SVGs came from.
     let pdf = oxml_pdf::render_to_pdf(&layout.layout);
-    fs::write(out_dir.join("poc.pdf"), &pdf).expect("write pdf");
-    println!("wrote {} ({} bytes)", out_dir.join("poc.pdf").display(), pdf.len());
+    fs::write(out_dir.join("render.pdf"), &pdf).expect("write pdf");
+    println!("wrote {} ({} bytes)", out_dir.join("render.pdf").display(), pdf.len());
 
     write_index(out_dir, layout.layout.pages.len());
     println!("wrote {}", out_dir.join("index.html").display());
@@ -73,12 +73,12 @@ fn main() {
 
 fn write_index(out_dir: &std::path::Path, pages: usize) {
     let mut html = String::from(
-        "<!doctype html><meta charset=\"utf-8\"><title>rdocx SVG PoC</title>\n\
+        "<!doctype html><meta charset=\"utf-8\"><title>rdocx SVG render check</title>\n\
          <style>body{font-family:sans-serif;background:#555;margin:20px}\n\
          .pair{display:flex;gap:16px;margin-bottom:24px;align-items:flex-start}\n\
          .pair>div{background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.4)}\n\
          img,object{display:block;width:612px}h2,figcaption{color:#eee}</style>\n\
-         <h2>left: SVG backend (PoC) &nbsp;|&nbsp; right: rdocx PNG backend (reference)</h2>\n",
+         <h2>left: SVG backend (rdoc) &nbsp;|&nbsp; right: rdocx PNG backend (reference)</h2>\n",
     );
     for p in 1..=pages {
         let _ = write!(

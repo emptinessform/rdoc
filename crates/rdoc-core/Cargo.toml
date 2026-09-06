@@ -10,14 +10,14 @@ publish = false
 # editor APIs and dense-form layout fixes not yet upstream.
 #
 # Build from the workspace root:
-#   native tools:  cargo run --release -p rdoc-core --bin poc
+#   native tools:  cargo run --release -p rdoc-core --bin render
 #   wasm bundle:   wasm-pack build crates/rdoc-core --release --target web #                    --out-dir ../../web/pkg -- --no-default-features
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "poc"
+name = "render"
 path = "src/main.rs"
 
 [features]

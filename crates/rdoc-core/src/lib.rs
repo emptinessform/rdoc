@@ -1,4 +1,4 @@
-//! PoC: render rdocx layout output (positioned pages + glyph runs) to SVG.
+//! Render rdocx layout output (positioned pages + glyph runs) to SVG.
 //!
 //! Pipeline: DOCX -> rdocx parse/model -> rdocx-layout (shaping, line
 //! breaking, pagination) -> positioned PageFrames -> SVG. Glyphs are
@@ -41,7 +41,7 @@ pub fn build_demo_doc() -> Document {
     doc.set_header("rdoc demo — 머리글도 편집됩니다");
     doc.set_footer_page_number("Page ");
 
-    doc.add_paragraph("rdocx SVG Rendering PoC").style("Heading1");
+    doc.add_paragraph("rdocx SVG rendering demo").style("Heading1");
 
     let mut p = doc.add_paragraph("");
     p.add_run("This page was laid out by ");
@@ -109,7 +109,7 @@ pub fn build_demo_doc() -> Document {
 
     doc.add_paragraph("")
         .alignment(Alignment::Center)
-        .add_run("— end of PoC page —")
+        .add_run("— end of demo page —")
         .italic(true)
         .color("808080");
 
@@ -833,7 +833,7 @@ mod edit_tests {
         let mut doc = build_demo_doc();
         let before = texts(&doc);
         assert!(insert_at(&mut doc, 0, 8, "XYZ"));
-        assert_eq!(&texts(&doc)[0], "rdocx SVXYZG Rendering PoC");
+        assert_eq!(&texts(&doc)[0], "rdocx SVXYZG rendering demo");
         for k in 0..3 {
             assert!(delete_char_before(&mut doc, 0, 11 - k));
         }
@@ -938,7 +938,7 @@ mod edit_tests {
 
 /// Redistribute per-glyph advances into per-character advances. When the
 /// shaper merged characters (ligatures) or split them, fall back to spreading
-/// the total width evenly — a PoC approximation that real provenance from the
+/// the total width evenly — an approximation that real provenance from the
 /// layout engine would make exact (cluster maps exist inside shaping).
 fn char_advances(text: &str, glyph_advances: &[f64]) -> Vec<f64> {
     let n_chars = text.chars().count();

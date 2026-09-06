@@ -1,5 +1,5 @@
 //! Minimal repro for the upstream glyph-duplication issue, exactly as the
-//! bug report states it. Uses only stock rdocx APIs (no PoC patches).
+//! bug report states it. Uses only stock rdocx APIs (no local patches).
 
 use rdocx::Document;
 

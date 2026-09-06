@@ -1,5 +1,5 @@
 {
-  "name": "rdoc-web",
+  "name": "rdoc-editor",
   "private": true,
   "scripts": {
     "build": "tsc -p .",

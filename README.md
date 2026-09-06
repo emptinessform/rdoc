@@ -19,7 +19,7 @@ DOCX에서 재현하는 프로젝트입니다. 차이점: DOCX는 파서·레이
 
 - 기존 브라우저 DOCX 편집기는 서버가 필요하거나(OnlyOffice, Collabora),
   wasm이어도 거대합니다(ZetaOffice ~1GB). 이 프로젝트의 wasm은 현재
-  **10.9MB (gzip 5.0MB)** 입니다.
+  **17.5MB (gzip 8.9MB)** 입니다.
 - 결과물 SVG는 글리프가 벡터 패스로 내장된 자기완결 문서 —
   뷰어에 폰트가 없어도 동일하게 렌더링됩니다 (1페이지 gzip ~40KB).
 - 한국어 조판(폰트 폴백·셰이핑)을 1급 요구사항으로 다룹니다. 데모는
@@ -27,7 +27,7 @@ DOCX에서 재현하는 프로젝트입니다. 차이점: DOCX는 파서·레이
   상용 패밀리명에 매핑해 어떤 환경에서도 한국어가 제 부류의 폰트로
   조판됩니다.
 
-### 현재 상태 (2026-08-23)
+### 현재 상태 (2026-09-07)
 
 메뉴바·툴바를 갖춘 편집기가 [온라인 데모](https://emptinessform.github.io/rdoc/)로
 공개되어 있습니다 (개발 프리뷰, main 푸시마다 자동 배포):
@@ -48,13 +48,14 @@ DOCX에서 재현하는 프로젝트입니다. 차이점: DOCX는 파서·레이
 - **뷰어**: 페이지 썸네일, 지연 페이지 렌더(가시 페이지 우선),
   .docx 저장/열기 왕복
 
-**성능** (63페이지 문서): 키 입력당 네이티브 min 23ms(게이트 <30ms),
-브라우저 데모 문서 기준 20~25ms · 변경 페이지만 재렌더.
+**성능** (63페이지, 700문단 문서): 키 입력당 네이티브 min 12ms
+(게이트 <30ms), 브라우저 Enter 중앙값 127ms · 변경 페이지만 재렌더.
+업스트림 v0.12.0 이행과 구조 편집 최적화(S61) 반영치입니다.
 
 코드는 [`crates/rdoc-core/`](crates/rdoc-core/)(Rust 코어)와
-[`web/`](web/)(TypeScript 앱), 브라우저 테스트 스위트 34종은
-[`web/tests/`](web/tests/), 상세 기록은 [`docs/worklog/`](docs/worklog/),
-과정에서 나온 지식 정리는 [`docs/knowledge.html`](docs/knowledge.html)에
+[`web/`](web/)(TypeScript 앱), 브라우저 테스트 스위트 50종은
+[`web/tests/`](web/tests/), 상세 기록은 [`docs/ko/worklog/`](docs/ko/worklog/),
+과정에서 나온 지식 정리는 [`docs/ko/knowledge.html`](docs/ko/knowledge.html)에
 있습니다.
 
 ### 실행
@@ -62,7 +63,7 @@ DOCX에서 재현하는 프로젝트입니다. 차이점: DOCX는 파서·레이
 ```bash
 # 구조: crates/rdoc-core (렌더·편집 코어) + web/ (에디터 앱). 루트에서 실행.
 # 네이티브 (시스템 폰트 사용): out/에 SVG + 참조 PNG 생성
-cargo run --release -p rdoc-core --bin poc
+cargo run --release -p rdoc-core --bin render
 
 # wasm 에디터
 wasm-pack build crates/rdoc-core --release --target web --out-dir ../../web/pkg -- --no-default-features
@@ -74,30 +75,34 @@ python -m http.server 8741               # → http://localhost:8741
 
 ### 업스트림 관계
 
-제안 다수가 rdocx **v0.8.0**에 수용·크레딧됐고(F-X032 layout API,
-F-X037 소스 맵, F-X038 문단 캐시), 현재는 v0.8.0 위에 리뷰 경계별 커밋을
-쌓은 [포크 브랜치 svg-poc-0.8](https://github.com/emptinessform/rdocx/tree/svg-poc-0.8)을
+제안 다수가 rdocx에 수용·크레딧됐습니다(F-X032 layout API, F-X037 소스 맵,
+F-X038 문단 캐시, F-X039/40/43~48, F-X075 재시작 페이지네이션). 현재는
+**v0.12.0** 위에 리뷰 경계별 커밋을 쌓은
+[포크 브랜치 svg-poc-0.12](https://github.com/emptinessform/rdocx/tree/svg-poc-0.12)를
 rev 고정으로 의존합니다:
 
-- 성능 제안 [#40](https://github.com/tensorbee/rdocx/pull/40)·[#41](https://github.com/tensorbee/rdocx/pull/41)
-  — 업스트림이 F-X039/40/43~47 강화판으로 수용(S52, v0.9.0 예정)
-- [#42](https://github.com/tensorbee/rdocx/issues/42)·[#43](https://github.com/tensorbee/rdocx/pull/43)
-  — 밀집 서식 레이아웃 수정 7건 → S53 **F-X048**로 편성, v0.9.0 크레딧 예정
-- [#44](https://github.com/tensorbee/rdocx/issues/44) — 폰트 별칭
-  (FontFile.family 무시 버그) 보고 + 참조 구현, 응답 대기
-- [#23](https://github.com/tensorbee/rdocx/issues/23) — 글리프 중복 진단
-  → F-X041로 수정·종결
+- [#65](https://github.com/tensorbee/rdocx/issues/65)·[#66](https://github.com/tensorbee/rdocx/issues/66)
+  — 각주 하나가 문단 캐시를 문서 전체에서 끄는 문제, 산문에서 재시작
+  페이지네이션이 켜지지 않는 문제 → v0.12.0에서 수정·종결
+- [#67](https://github.com/tensorbee/rdocx/issues/67) — 페이지를 걸친 문단이
+  매 레이아웃을 두 번 페이지네이션시키던 회귀 → **F-X075**로 수정, 실측 확인
+  (v0.8.0 핀 대비 타이핑 ~2.4배)
+- [#69](https://github.com/tensorbee/rdocx/issues/69) — 남은 구조 편집 비용
+  3건(노트 캐시 게이트·재시작 레코드 재사용·identity 직렬화) 보고 + 포크에
+  구현·측정, 업스트림 응답 대기
+- [#42](https://github.com/tensorbee/rdocx/issues/42)·[#44](https://github.com/tensorbee/rdocx/issues/44)·[#23](https://github.com/tensorbee/rdocx/issues/23)
+  — 밀집 서식 레이아웃, 폰트 별칭, 글리프 중복 → 모두 수정·종결
 
 ### 로드맵 · 진행 방식
 
-PoC 단계(뷰어 → 편집 MVP → 증분 레이아웃/IME → 실문서 검증)는 완료 —
-현재는 본격 구현 단계([`docs/01-roadmap.md`](docs/01-roadmap.md)):
+프로토타입 단계(뷰어 → 편집 MVP → 증분 레이아웃/IME → 실문서 검증)는 완료 —
+현재는 본격 구현 단계([`docs/ko/01-roadmap.md`](docs/ko/01-roadmap.md)):
 M0 제품 골격(완료) → **M1 에디터 완성도(진행 중)** → M2 문서 기능 →
 M3 제품화.
 
 rhwp의 방법론을 따릅니다: AI 페어 프로그래밍 + **사람이 매 단계를
 확인하는 검증 우선 진행**. 모든 단계는 실측 증거(수치·스크린샷)와 함께
-`docs/worklog/`에 기록됩니다. 규칙은 [`CLAUDE.md`](CLAUDE.md).
+`docs/ko/worklog/`에 기록됩니다. 규칙은 [`CLAUDE.md`](CLAUDE.md).
 
 ### 라이선스
 
@@ -120,7 +125,7 @@ The difference: DOCX already has an open-source parser and layout engine,
 
 - Existing browser DOCX editors need a server (OnlyOffice, Collabora) or
   are enormous even as wasm (ZetaOffice ~1GB). rdoc's wasm is currently
-  **10.9MB (5.0MB gzipped)**.
+  **17.5MB (8.9MB gzipped)**.
 - The output SVG is self-contained, with every glyph embedded as a vector
   path — it renders identically on machines with no fonts installed
   (~40KB gzipped per page).
@@ -129,7 +134,7 @@ The difference: DOCX already has an open-source parser and layout engine,
   OFL) onto the family names real documents ask for (굴림, 돋움, 바탕,
   궁서, …), so Korean text shapes with the right class of font anywhere.
 
-### Status (2026-08-23)
+### Status (2026-09-07)
 
 An editor with a menubar and toolbar is publicly available as a
 [live demo](https://emptinessform.github.io/rdoc/) (dev preview,
@@ -154,21 +159,23 @@ auto-deployed on every push to main):
 - **Viewer**: page thumbnails, lazy page rendering (visible pages first),
   .docx save/open round-trip
 
-**Performance** (63-page document): native min 23ms per keystroke
-(<30ms gate); the browser demo document edits at 20–25ms, re-rendering
-only changed pages.
+**Performance** (63-page, 700-paragraph document): native min 12ms per
+keystroke (<30ms gate); Enter in the browser has a 127ms median,
+re-rendering only the pages that changed. These reflect the upstream
+v0.12.0 migration and the structural-edit work in S61.
 
 Code lives in [`crates/rdoc-core/`](crates/rdoc-core/) (Rust core) and
-[`web/`](web/) (TypeScript app); the 34 browser test suites are in
+[`web/`](web/) (TypeScript app); the 50 browser test suites are in
 [`web/tests/`](web/tests/); detailed logs in
-[`docs/worklog/`](docs/worklog/) (Korean).
+[`docs/ko/worklog/`](docs/ko/worklog/) (Korean); the knowledge notes from
+the work are in [`docs/en/knowledge.html`](docs/en/knowledge.html).
 
 ### Running
 
 ```bash
 # Layout: crates/rdoc-core (render/edit core) + web/ (editor app). Run from the root.
 # Native (system fonts): writes SVG + reference PNGs to out/
-cargo run --release -p rdoc-core --bin poc
+cargo run --release -p rdoc-core --bin render
 
 # wasm editor
 wasm-pack build crates/rdoc-core --release --target web --out-dir ../../web/pkg -- --no-default-features
@@ -180,34 +187,39 @@ python -m http.server 8741               # → http://localhost:8741
 
 ### Upstream
 
-Many proposals were accepted and credited in rdocx **v0.8.0** (F-X032
-layout API, F-X037 source maps, F-X038 paragraph cache). rdoc currently
-pins a [fork branch svg-poc-0.8](https://github.com/emptinessform/rdocx/tree/svg-poc-0.8)
-of review-sized commits on top of v0.8.0:
+Many proposals have been accepted and credited upstream (F-X032 layout
+API, F-X037 source maps, F-X038 paragraph cache, F-X039/40/43-48, F-X075
+restart pagination). rdoc currently pins a
+[fork branch svg-poc-0.12](https://github.com/emptinessform/rdocx/tree/svg-poc-0.12)
+of review-sized commits on top of **v0.12.0**:
 
-- Performance PRs [#40](https://github.com/tensorbee/rdocx/pull/40)·[#41](https://github.com/tensorbee/rdocx/pull/41)
-  — adopted upstream as hardened F-X039/40/43–47 (S52, planned v0.9.0)
-- [#42](https://github.com/tensorbee/rdocx/issues/42)·[#43](https://github.com/tensorbee/rdocx/pull/43)
-  — seven dense-form layout fixes, scheduled as S53 **F-X048** with
-  credit in v0.9.0
-- [#44](https://github.com/tensorbee/rdocx/issues/44) — font aliasing
-  (FontFile.family ignored) report + reference implementation, awaiting
-  response
-- [#23](https://github.com/tensorbee/rdocx/issues/23) — glyph
-  duplication diagnosis → fixed as F-X041, closed
+- [#65](https://github.com/tensorbee/rdocx/issues/65)·[#66](https://github.com/tensorbee/rdocx/issues/66)
+  — one footnote disabling the paragraph cache document-wide, and restart
+  pagination never engaging on ordinary prose → both fixed in v0.12.0
+- [#67](https://github.com/tensorbee/rdocx/issues/67) — a paragraph
+  spanning a page break made every layout paginate twice → fixed by
+  **F-X075**, confirmed by measurement (typing ~2.4x faster than our
+  v0.8.0 pin)
+- [#69](https://github.com/tensorbee/rdocx/issues/69) — the three
+  structural-edit costs that remain (note-part cache gate, restart-record
+  reuse, identity serialization), reported with fixes implemented and
+  measured in our fork; awaiting upstream response
+- [#42](https://github.com/tensorbee/rdocx/issues/42)·[#44](https://github.com/tensorbee/rdocx/issues/44)·[#23](https://github.com/tensorbee/rdocx/issues/23)
+  — dense-form layout, font aliasing and glyph duplication → all fixed
+  and closed
 
 ### Roadmap · Process
 
-The PoC phase (viewer → editing MVP → incremental layout/IME →
+The prototype phase (viewer → editing MVP → incremental layout/IME →
 real-document validation) is complete; now building the product
-([`docs/01-roadmap.md`](docs/01-roadmap.md)): M0 product skeleton (done)
+([`docs/en/01-roadmap.md`](docs/en/01-roadmap.md)): M0 product skeleton (done)
 → **M1 editor completeness (in progress)** → M2 document features →
 M3 productization.
 
 rdoc follows rhwp's methodology: AI pair programming with
 **measurement-first progress confirmed by a human at every stage**.
 Every stage is logged with evidence (numbers, screenshots) in
-[`docs/worklog/`](docs/worklog/). Rules: [`CLAUDE.md`](CLAUDE.md).
+[`docs/ko/worklog/`](docs/ko/worklog/). Rules: [`CLAUDE.md`](CLAUDE.md).
 
 ### License
 
