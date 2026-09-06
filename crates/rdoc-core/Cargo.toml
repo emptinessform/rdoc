@@ -25,9 +25,9 @@ default = ["native"]
 native = ["rdocx/system-fonts"]
 
 [dependencies]
-rdocx = { git = "https://github.com/emptinessform/rdocx", rev = "eff0ea0c28b5eaf08180b09b58e0c0f486b7433b", default-features = false }
-oxml-layout = { git = "https://github.com/emptinessform/rdocx", rev = "eff0ea0c28b5eaf08180b09b58e0c0f486b7433b", default-features = false }
-oxml-pdf = { git = "https://github.com/emptinessform/rdocx", rev = "eff0ea0c28b5eaf08180b09b58e0c0f486b7433b", default-features = false }
+rdocx = { git = "https://github.com/emptinessform/rdocx", rev = "c8315b92857c951146fc866cd044b214194a09a8", default-features = false }
+oxml-layout = { git = "https://github.com/emptinessform/rdocx", rev = "c8315b92857c951146fc866cd044b214194a09a8", default-features = false }
+oxml-pdf = { git = "https://github.com/emptinessform/rdocx", rev = "c8315b92857c951146fc866cd044b214194a09a8", default-features = false }
 ttf-parser = "0.25"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
