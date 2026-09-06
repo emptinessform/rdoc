@@ -59,7 +59,7 @@ fn main() {
     // invalidated by the mutation, so this is the editor's per-key cost).
     let mut keystroke = Vec::new();
     for k in 0..10 {
-        assert!(insert_at(&mut doc, 350, 10 + k, "x"));
+        assert!(insert_at(&mut doc, paras / 2, 10 + k, "x"));
         let t = Instant::now();
         let _ = doc.layout().expect("layout");
         keystroke.push(t.elapsed().as_secs_f64() * 1000.0);
@@ -73,11 +73,14 @@ fn main() {
     // three locations; the layout after each is what the editor would pay.
     fn op(
         doc: &mut rdocx::Document,
+        paras: usize,
         name: &str,
         f: &mut dyn FnMut(&mut rdocx::Document, usize) -> bool,
     ) {
         let mut ms = Vec::new();
-        for &at in &[200usize, 400, 600] {
+        // Proportional to the document, so paras=700 keeps the historical
+        // 200 / 400 / 600 locations.
+        for at in [paras * 2 / 7, paras * 4 / 7, paras * 6 / 7] {
             assert!(f(doc, at), "{name} failed at {at}");
             let t = Instant::now();
             let _ = doc.layout().expect("layout");
@@ -85,13 +88,13 @@ fn main() {
         }
         println!("{name}: {:.0} / {:.0} / {:.0} ms", ms[0], ms[1], ms[2]);
     }
-    op(&mut doc, "Enter (split)", &mut |d, at| {
+    op(&mut doc, paras, "Enter (split)", &mut |d, at| {
         d.split_paragraph_at_path(&[at], 20)
     });
-    op(&mut doc, "Backspace merge", &mut |d, at| {
+    op(&mut doc, paras, "Backspace merge", &mut |d, at| {
         d.merge_paragraph_at_path(&[at + 1])
     });
-    op(&mut doc, "selection delete across 2 paragraphs", &mut |d, at| {
+    op(&mut doc, paras, "selection delete across 2 paragraphs", &mut |d, at| {
         delete_range_across(
             d,
             &EditPath::Doc(vec![at]),
@@ -100,12 +103,12 @@ fn main() {
             10,
         )
     });
-    op(&mut doc, "insert footnote", &mut |d, at| {
+    op(&mut doc, paras, "insert footnote", &mut |d, at| {
         d.insert_footnote_ref_at(&[at], 5).is_some()
     });
     let last_note = doc.footnotes().last().map(|(id, _)| *id).unwrap();
     let mut note_ids = vec![last_note - 2, last_note - 1, last_note];
-    op(&mut doc, "delete footnote", &mut |d, _| {
+    op(&mut doc, paras, "delete footnote", &mut |d, _| {
         d.remove_footnote(note_ids.pop().unwrap())
     });
 
