@@ -137,7 +137,7 @@ impl SvgConverter {
             },
         };
         let layout = doc
-            .layout_with_fonts_aliases_options_and_bundled_fallback(&fonts, &aliases, options)
+            .layout_with_fonts_aliases_and_bundled_fallback_and_options(&fonts, &aliases, options)
             .map_err(err)?;
         let delta = render_delta(&layout, &mut self.cache);
         serde_json::to_string(&RenderOut {
@@ -173,7 +173,7 @@ impl SvgConverter {
             },
         };
         let layout = doc
-            .layout_with_fonts_aliases_options_and_bundled_fallback(&fonts, &aliases, options)
+            .layout_with_fonts_aliases_and_bundled_fallback_and_options(&fonts, &aliases, options)
             .map_err(err)?;
         crate::render_page_svg(&layout, index).ok_or_else(|| err("page out of range"))
     }
@@ -907,7 +907,7 @@ impl SvgConverter {
             },
         };
         let layout = doc
-            .layout_with_fonts_aliases_options_and_bundled_fallback(&fonts, &aliases, options)
+            .layout_with_fonts_aliases_and_bundled_fallback_and_options(&fonts, &aliases, options)
             .map_err(err)?;
         Ok(oxml_pdf::render_to_pdf(&layout.layout))
     }
