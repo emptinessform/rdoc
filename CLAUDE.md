@@ -42,57 +42,68 @@ python serve.py   # http.server 8741 + no-cache (모듈 캐시 방지)
 
 ## 업스트림 관계 (tensorbee/rdocx)
 
-- 기반: 업스트림 v0.8.0 (F-X032 layout API, F-X037 provenance, F-X038 캐시).
-- 의존: 포크 `emptinessform/rdocx` 브랜치 `svg-poc-0.8` (rev 고정,
-  Cargo.toml; 로컬 클론 D:\sb\SBDoc\rdocx-fork). v0.8.0 위 리뷰 경계별
-  분리 커밋: S2 편집 헬퍼, 번들 폴백 진입점, Arc 타입 브레이크(F-X039
-  후보), 재시작 페이지네이션+표/HF 캐시(F-X040 후보), 폴백 엔진
-  유지+핸드오프, F-X038 튜닝, 미주 타입 필드 승격·노트/표/이미지 편집
-  API, dense-form 레이아웃 수정(중첩 표·vMerge·exact 행·표 스타일
-  캐스케이드·셀 앵커), caller 폰트 family 별칭(#44/PR #45로 업스트림
-  제출), 리스트/링크/셀 병합/그리드 게터/본문 항목 이동(move_content)/
-  이미지 리사이즈(resize_inline_image) 등 에디터 지원 API. SBOdf도
-  같은 브랜치에 커밋한다(탭 스톱 등).
-  구 브랜치 `svg-poc`(pre-0.8.0)와 `perf-caches`는 참고용 유산.
-- 업스트림 상태 (2026-09-06): **v0.12.0 태그**(`19adaacf`, 2026-09-03,
-  S64). #65/#66/#67 **모두 종결**. #67은 **F-X075**가 고쳤다 — S58이 짚은
-  `Engine::layout_transaction`의 `had_split_paragraph` 거부 분기를 제거하고,
-  안전성은 `Pager::finish_page_before`의 완전 블록 경계 체크포인트로 좁혔다.
-  업스트림 main은 이미 S68(`c8908d07`)까지 갔으나 스파이크는 태그본만 봤다.
-  **S59 결과: 성능 회귀는 대부분 해소, 그러나 이행은 아직 보류(5회째) —
-  기능 결손 1건과 새 회귀 2건 때문.**
-  **좋아진 것**: 네이티브 타이핑 700문단 min ms 31/34/33/27 → **12/14/14/17**
-  (4/4 승, ~2.4배). 브라우저에서 S57·S58의 타이핑 1.24× 회귀 해소(캐럿
-  30페이지 1.04×, 1페이지 1.3~1.6× 개선), S58의 **병합 1.53×·undo 1.39×·
-  로드 1.54× 회귀 모두 동률로 소멸**. 콜드 레이아웃 3/3 승.
-  **포크가 처음으로 줄었다**: 50 → **36커밋**. 업스트림이 F-X039 Arc 타입
-  브레이크 2건, F-X040 재시작/표·HF 캐시, 번들 폴백 진입점, caller 폰트
-  별칭(우리 #44/PR #45), 표 스타일 tblPr, **dense-form 표 레이아웃 전체**
-  (중첩 표·vMerge·exact 행·셀 앵커·테두리 양보·behindDoc), 문단 캐시
-  프리필터·캡(50 MB), `add_run_inheriting_mark`를 흡수했다.
-  **남은 기능 결손 (이행 전제 조건)**: v0.12.0은 문단 base direction이
-  `Auto`가 아니거나 런에 CJK 표의문자(**한자 포함**)·가나·태국어·데바나가리·
-  히브리/아랍이 있으면 `PositionedElement::MultilingualText`
-  (`MultilingualGlyphRun`)를 내보낸다. **한글은 트리거가 아니다.** rdoc의
-  SVG 렌더러·히트 매핑은 `GlyphRun`만 알아서 코퍼스 14개 중 **7개가 백지**
-  (LibreOffice가 방향 속성을 붙이므로 CJK 없는 문서도 해당). 렌더+히트
-  지원 필요(100~200줄 추정). 같은 계열로 v0.12.0은 모든 요소를
-  `PositionedElement::MarkedContent`로 감싸는데, 이건 S59에서 rdoc의 순회
-  3곳(`emit_elements`/`collect_hits`/`hash_elements`)을 내려가게 고쳐 해결.
-  **남은 회귀 (업스트림 판단 영역)**: 구조 편집이 v0.8보다 느리다 —
-  브라우저 **Enter 2.32× (5/5)**, 네이티브 Enter 1.25×·병합 1.35× (4/4),
-  **각주 삽입/삭제 4× (4/4)**. 소스 노드 테이블이 바뀌면 재시작 레코드를
-  다시 발행해야 하고 `restart_body_identity`가 블록마다 XML을 직렬화하는
-  비용으로 보이나 계측으로 확정하지 않았다.
+- 기반: 업스트림 **v0.12.0** (2026-09-06 S59/S60에서 v0.8.0에서 이행).
+- 의존: 포크 `emptinessform/rdocx` 브랜치 `svg-poc-0.12` (rev `6d71cb3d`
+  고정, Cargo.toml; 로컬 클론 D:\sb\SBDoc\rdocx-fork). v0.12.0 위 **36커밋**
+  (v0.8.0 위 50커밋에서 18개를 업스트림이 흡수해 드롭, 신규 4개 추가):
+  S2 편집 헬퍼, 미주 타입 필드 승격·노트/표/이미지 편집 API, 리스트/링크/
+  셀 병합/그리드 게터/본문 항목 이동(move_content)/이미지 리사이즈
+  (resize_inline_image), "font-natural" 라인 규칙과 한글 어절 줄바꿈,
+  합성 이탤릭, 후행 공백 행잉, 탭 스톱 파라미터화, 그리고 번들 폴백 엔진
+  핸드오프(`take_layout_engine`/`set_layout_engine`). SBOdf도 같은 브랜치에
+  커밋한다.
+  ⚠ 어절 줄바꿈은 **라인브레이커의 `LineBreakParams::hangul_word_wrap`
+  하나로만** 구현한다. v0.8.0의 `convert::text_segments` 프리스플릿은
+  v0.12.0이 없앴고, 되살리면 업스트림 계약 테스트 2개
+  (`word_projection_leaves_break_segmentation_to_shared_layout`,
+  `reported_words_do_not_duplicate_boundary_glyphs`)가 깨진다.
+  구 브랜치 `svg-poc-0.8`(v0.8.0 핀), `svg-poc`(pre-0.8.0), `perf-caches`,
+  스파이크 브랜치들(`svg-poc-0.9`~`svg-poc-0.11-s63`)은 참고용 유산.
+  진단용: `exp/s60-identity`(`RDOCX_DIAG_IDENTITY`로 레이아웃당
+  `restart_body_identity` 호출 수 집계).
+- 업스트림 상태 (2026-09-06): **v0.12.0으로 이행 완료** (다섯 번의 스파이크
+  끝에). v0.12.0 태그 `19adaacf`(2026-09-03, S64). #65/#66/#67 모두 종결이며
+  #67은 **F-X075**가 고쳤다 — S58이 짚은 `Engine::layout_transaction`의
+  `had_split_paragraph` 거부 분기를 제거하고 안전성은
+  `Pager::finish_page_before`의 완전 블록 경계 체크포인트로 좁혔다.
+  업스트림 main은 이미 S68(`c8908d07`)까지 갔으나 태그본만 채택했다.
+  **이행으로 얻은 것**: 네이티브 타이핑 700문단 min ms 31/34/33/27 →
+  **12/14/14/17**(4/4 승, ~2.4배). S57·S58의 타이핑 1.24× 회귀 해소,
+  S58의 병합 1.53×·undo 1.39×·로드 1.54× 회귀 모두 동률로 소멸.
+  콜드 레이아웃 3/3 승. 포크 50 → 36커밋.
+  **이행에 필요했던 rdoc 적응**: (1) 호출부 3곳 이름
+  (`layout_with_fonts_aliases_and_bundled_fallback_and_options`),
+  (2) `PositionedElement::MarkedContent` — v0.12.0이 모든 요소를 태그드
+  구조 컨테이너로 감싸므로 `emit_elements`/`collect_hits`/`hash_elements`가
+  children으로 내려가야 한다(안 하면 전 페이지가 215바이트 빈 SVG),
+  (3) `PositionedElement::MultilingualText` — 문단 base direction이 `Auto`가
+  아니거나 런에 CJK 표의문자(**한자 포함**)·가나·태국어·데바나가리·히브리/
+  아랍이 있으면 `MultilingualGlyphRun`으로 나온다(**한글은 트리거 아님**).
+  `legacy_projection()`이 `GlyphRun`과 글리프 단위로 동일하므로 히트는
+  `push_hit` 그대로 쓰고, 렌더는 글리프별 x/y 오프셋과 세로 어드밴스를
+  받는 공용 페인터로 처리한다 — 글리프는 `(pen_x + x_offset,
+  pen_y - y_offset)`, 펜은 `(+x_advance, -y_advance)`.
+  **남은 회귀 (업스트림 이슈 후보)**: 구조 편집이 v0.8보다 느리다 —
+  브라우저 **Enter 2.32×(5/5)**, 네이티브 **각주 삽입/삭제 ~3×**
+  (100/200/400/700문단에서 8→20, 13→38, 22→86, 57→158 ms, 전 라운드 패).
+  **원인 확정** (`exp/s60-identity`의 `RDOCX_DIAG_IDENTITY` 계측):
+  `engine.rs`의 `reusable_restart_record`가 (a) 문서 전체 노트 참조 시퀀스
+  동일성과 (b) provenance가 켜져 있으면 본문 블록 수 동일성을 요구한다.
+  각주 추가/삭제는 (a)를, Enter/병합/선택 삭제는 (b)를 깨므로
+  `first_changed`/`common_suffix`가 `None` → `prefix=0, suffix=0`이 되고
+  레코드 재구축이 **블록마다 `restart_body_identity`(=`CT_Document::to_xml`)**
+  를 부른다. 실측: 715블록에서 타이핑은 `reusable=true prefix=357 suffix=357
+  identity_calls=1072`, 모든 구조 편집은 `reusable=false prefix=0 suffix=0
+  identity_calls=N`. (빠른 경로조차 레이아웃당 ~1.5N회 직렬화한다.)
   기능 등가: 브라우저 배터리 50/50, 58페이지, 델타 2/58, 네이티브 PoC 히트
-  272(264 매핑). wasm 12.29 → **17.53 MB (+43%)**.
-  포크 `svg-poc-0.12`(6d71cb3d), rdoc `s59-v0120-spike`.
+  272(264 매핑), 코퍼스 14/14에 문서별 SVG 크기가 v0.8 핀과 동일하고
+  글리프 좌표도 일치. wasm 12.29 → **17.54 MB (+43%)**.
   ⚠ 측정 규약: 이 머신은 같은 빌드 편차가 ±30%라 단발 비교는 무의미하다.
   브라우저 A/B는 pkg 2벌을 보관해 **한 세션 내 교대로 여러 라운드**를
   돌리고 **페어 승패**로 판정할 것. 네이티브도 벤치 실행 파일을 빌드별로
-  보관해 교대 실행한다.
+  보관해 교대 실행한다. `RDOC_BENCH_PARAS`로 문서 크기를 바꿔 기울기를 본다.
   경위: v0.9.0(S55)·v0.10.1(S56)·v0.11.1(S57)·S63 재스파이크(S58) 보류
-  기록은 docs/worklog/ 참조.
+  기록과 S59/S60 이행 기록은 docs/worklog/ 참조.
 - 업스트림에 변화가 있으면(답변, 수정) 포크 리베이스와 rev 갱신을 검토하고
   worklog에 기록한다. 업스트림 게시(이슈·PR·코멘트)는 사용자 확인 후 한다.
 
@@ -102,8 +113,10 @@ python serve.py   # http.server 8741 + no-cache (모듈 캐시 방지)
   본문·표 셀·머리글·꼬리글·각주에서 동작 (미주와 경계 프로젝션 문단은
   거부). 각주 추가/삭제는 Ctrl+Alt+F/D. 미주 조작·셀 간 선택 편집은
   미지원.
-- 문단 삽입/삭제(Enter/병합)는 소스 노드 테이블이 바뀌어 페이지네이션
-  캐시 전체 폴백 (타이핑은 증분).
+- 문단 삽입/삭제(Enter/병합)와 각주 추가/삭제는 v0.12.0의 재시작 레코드
+  재사용 게이트를 깨서 레코드를 통째로 다시 만든다 — 본문 블록마다
+  `restart_body_identity`(XML 직렬화). 브라우저 Enter 2.32×, 네이티브
+  각주 ~3× (타이핑은 증분이고 v0.8보다 2.4배 빠르다). 업스트림 이슈 후보.
 - 프리에딧 밑줄은 오버레이 전용 (문서 서식 아님 — 의도된 설계).
 - `malgun.ttf`는 MS 라이선스라 저장소에 포함 금지. 재현 시 로컬 복사 또는
   자유 라이선스 한국어 폰트 사용.
