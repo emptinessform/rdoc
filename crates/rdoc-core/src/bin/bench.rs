@@ -16,7 +16,13 @@ fn main() {
         doc.set_footer_page_number("Page ");
     }
     doc.add_paragraph("Relayout benchmark").style("Heading1");
-    for i in 0..700 {
+    // RDOC_BENCH_PARAS=N sizes the document, so a per-block cost can be
+    // told apart from a per-edit one by its slope.
+    let paras: usize = std::env::var("RDOC_BENCH_PARAS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(700);
+    for i in 0..paras {
         let mut text = String::new();
         let _ = write!(
             text,
