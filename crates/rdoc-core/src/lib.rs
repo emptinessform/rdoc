@@ -14,8 +14,8 @@ use std::fmt::Write as _;
 
 use base64::Engine as _;
 use oxml_layout::{
-    Color, FontData, FontId, GlyphRun, LayoutResult, Paint, Path as LxPath, PathCommand,
-    PositionedElement,
+    Color, FontData, FontId, GlyphRun, LayoutResult, MultilingualGlyphRun, Paint, Path as LxPath,
+    PathCommand, PositionedElement,
 };
 use rdocx::{Alignment, BorderStyle, Document};
 
@@ -269,6 +269,12 @@ impl<'a> SvgRenderer<'a> {
         for el in elements {
             match el {
                 PositionedElement::Text(run) => self.emit_glyph_run(out, run),
+                PositionedElement::MultilingualText(run) => self.emit_multilingual_run(out, run),
+                // v0.12.0 wraps drawing elements in tagged-structure
+                // containers; they add no geometry, so emit through.
+                PositionedElement::MarkedContent { children, .. } => {
+                    self.emit_elements(out, children)
+                }
                 PositionedElement::Line {
                     start,
                     end,
@@ -468,7 +474,16 @@ impl<'a> SvgRenderer<'a> {
                     PositionedElement::Text(run) => {
                         r.push_hit(run);
                     }
+                    // Word-multilingual spans (CJK, RTL, complex scripts):
+                    // the legacy projection carries the same logical text,
+                    // advances and source span the hit record needs.
+                    PositionedElement::MultilingualText(run) => {
+                        r.push_hit(&run.legacy_projection());
+                    }
                     PositionedElement::Group(g) => walk(r, &g.children),
+                    // v0.12.0 wraps drawing elements in tagged-structure
+                    // containers; they carry no geometry of their own.
+                    PositionedElement::MarkedContent { children, .. } => walk(r, children),
                     _ => {}
                 }
             }
@@ -477,8 +492,43 @@ impl<'a> SvgRenderer<'a> {
     }
 
     fn emit_glyph_run(&mut self, out: &mut String, run: &GlyphRun) {
-        let _hit_id = self.push_hit(run);
-        let hit_id = _hit_id;
+        self.emit_positioned_glyph_run(out, run, &[], &[], &[]);
+    }
+
+    /// A Word-multilingual span (CJK, RTL, or complex-script text). v0.12.0
+    /// emits these instead of `Text` whenever a paragraph resolves a base
+    /// direction or a run carries CJK ideographs, kana, Thai, Devanagari, or
+    /// Hebrew/Arabic. The legacy projection is glyph-for-glyph identical to a
+    /// `GlyphRun`; the extra per-glyph offsets and vertical advances carry the
+    /// two-axis positioning that mark attachment and vertical scripts need.
+    fn emit_multilingual_run(&mut self, out: &mut String, run: &MultilingualGlyphRun) {
+        if !run.is_valid() {
+            self.warnings += 1;
+            return;
+        }
+        self.emit_positioned_glyph_run(
+            out,
+            &run.legacy_projection(),
+            &run.x_offsets,
+            &run.y_offsets,
+            &run.y_advances,
+        );
+    }
+
+    /// Shared painter. `x_offsets`/`y_offsets` displace a glyph from the pen
+    /// without moving it; `y_advances` moves the pen vertically. All three are
+    /// empty for a plain `GlyphRun`. Signs follow rdocx's own rasterizer:
+    /// the glyph sits at `(pen_x + x_offset, pen_y - y_offset)` and the pen
+    /// then moves by `(+x_advance, -y_advance)`.
+    fn emit_positioned_glyph_run(
+        &mut self,
+        out: &mut String,
+        run: &GlyphRun,
+        x_offsets: &[f64],
+        y_offsets: &[f64],
+        y_advances: &[f64],
+    ) {
+        let hit_id = self.push_hit(run);
         let Some(info) = self.faces.get(&run.font_id.0) else {
             self.warnings += 1;
             return;
@@ -508,6 +558,7 @@ impl<'a> SvgRenderer<'a> {
         );
         let skew = if synth_italic { " skewX(-12)" } else { "" };
         let mut pen_x = run.origin.x;
+        let mut pen_y = run.origin.y;
         for (i, gid) in run.glyph_ids.iter().enumerate() {
             if let Some(def) = glyph_def(
                 &mut self.glyph_defs,
@@ -520,13 +571,14 @@ impl<'a> SvgRenderer<'a> {
                     out,
                     r##"<use href="#{}g{def}" transform="translate({} {}){skew} scale({} {})"/>"##,
                     self.prefix,
-                    f(pen_x),
-                    f(run.origin.y),
+                    f(pen_x + x_offsets.get(i).copied().unwrap_or(0.0)),
+                    f(pen_y - y_offsets.get(i).copied().unwrap_or(0.0)),
                     fs(scale),
                     fs(-scale)
                 );
             }
             pen_x += run.advances.get(i).copied().unwrap_or(0.0);
+            pen_y -= y_advances.get(i).copied().unwrap_or(0.0);
         }
         out.push_str("</g>\n");
     }
@@ -974,6 +1026,7 @@ fn fnv(bytes: &[u8]) -> u64 {
 fn hash_elements(elements: &[PositionedElement], h: &mut Fnv) {
     for el in elements {
         match el {
+            PositionedElement::MarkedContent { children, .. } => hash_elements(children, h),
             PositionedElement::Text(r) => {
                 h.bytes(b"t");
                 h.f64(r.origin.x);
@@ -983,6 +1036,23 @@ fn hash_elements(elements: &[PositionedElement], h: &mut Fnv) {
                 h.bytes(r.text.as_bytes());
                 for g in &r.glyph_ids {
                     h.bytes(&g.to_le_bytes());
+                }
+                h.f64(r.color.r);
+                h.f64(r.color.g);
+                h.f64(r.color.b);
+            }
+            PositionedElement::MultilingualText(r) => {
+                h.bytes(b"m");
+                h.f64(r.origin.x);
+                h.f64(r.origin.y);
+                h.f64(r.font_size);
+                h.bytes(&r.font_id.0.to_le_bytes());
+                h.bytes(r.logical_text.as_bytes());
+                for g in &r.glyph_ids {
+                    h.bytes(&g.to_le_bytes());
+                }
+                for v in r.x_offsets.iter().chain(&r.y_offsets).chain(&r.y_advances) {
+                    h.f64(*v);
                 }
                 h.f64(r.color.r);
                 h.f64(r.color.g);
