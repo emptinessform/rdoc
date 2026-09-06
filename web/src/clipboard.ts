@@ -8,6 +8,7 @@ import { edit, deleteSel, replaceSelWith } from "./edit.js";
 import { finalizeComposition } from "./ime.js";
 import { findq, replq } from "./find.js";
 import { drawImageHandle, clearImageHandle } from "./imgresize.js";
+import { t } from "./i18n/index.js";
 
 // Plain text only. Multi-line text becomes paragraph splits (one history
 // entry via wasm paste_text). A selection is replaced first: single-line
@@ -32,7 +33,7 @@ export function doPaste(text: string) {
 
 export async function insertImageBytes(bytes: Uint8Array, name: string) {
   if (!S.caret || !S.caret.path.startsWith("d/")) {
-    report("이미지: 본문에 캐럿을 두세요");
+    report(t("msg.imageNeedsBody"));
     return;
   }
   const at = { ...S.caret };
@@ -65,7 +66,7 @@ export function selectImage(el: SVGImageElement) {
   el.style.outline = "2px solid #1a73e8";
   S.imageSel = { el, index };
   drawImageHandle();
-  report(`이미지 선택 (${index + 1}번째) — 모서리 핸들로 크기, Delete로 삭제`);
+  report(t("msg.imageSelected", { index: index + 1 }));
 }
 
 export function deleteSelectedImage() {

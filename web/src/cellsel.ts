@@ -5,6 +5,7 @@
 
 import { pagesEl, report } from "./render.js";
 import { tableGeom } from "./tablegeo.js";
+import { t } from "./i18n/index.js";
 
 export interface CellSel {
   page: number;
@@ -21,7 +22,7 @@ export function setCellSel(cs: CellSel) {
   cur = cs;
   draw();
   const rows = cs.r1 - cs.r0 + 1, cols = cs.c1 - cs.c0 + 1;
-  report(`셀 블록 ${rows}×${cols} 선택 (병합: 툴바/삽입 메뉴, 해제: Esc)`);
+  report(t("msg.cellBlock", { rows, cols }));
 }
 
 /** Clears the block if one is active; returns whether there was one. */

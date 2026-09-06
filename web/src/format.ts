@@ -6,6 +6,7 @@ import { report } from "./render.js";
 import { drawCaret, drawSelection, selectParaOffsets, refForOffset } from "./view.js";
 import { edit, selRange, selectionRanges, toggleFmt } from "./edit.js";
 import { cellSel, clearCellSel } from "./cellsel.js";
+import { t } from "./i18n/index.js";
 
 // Paragraph alignment for the caret paragraph or every paragraph the
 // selection touches, as one history entry. Text is unchanged, so the
@@ -20,7 +21,7 @@ export function alignSelection(align: string) {
       paths.push(r.pa.replace(/\d+$/, String(i)));
   } else if (r) paths = [r.pa];
   else if (S.caret) paths = [S.caret.path];
-  if (!paths.length) { report("정렬: 캐럿을 두거나 선택하세요"); return; }
+  if (!paths.length) { report(t("msg.alignNeedsCaret")); return; }
   const keep = S.caret && { ...S.caret };
   const keepSel = S.sel && { a: { ...S.sel.a }, b: { ...S.sel.b } };
   edit(() => {
@@ -36,7 +37,7 @@ export function alignSelection(align: string) {
 export function applyFontSize(pt: number) {
   if (!(pt >= 6 && pt <= 96)) return;
   const ranges = selectionRanges();
-  if (!ranges || !ranges.length) { report("크기: 텍스트를 선택하세요"); return; }
+  if (!ranges || !ranges.length) { report(t("msg.sizeNeedsSel")); return; }
   edit(() => {
     const json = S.conv.set_size_ranges(JSON.stringify(ranges), pt);
     S.caret = { path: ranges[0].path, off: ranges[0].start };
@@ -49,7 +50,7 @@ export function applyFontSize(pt: number) {
 // selection collapses to a caret at the range start, like font size.
 export function applyFontFamily(family: string) {
   const ranges = selectionRanges();
-  if (!ranges || !ranges.length) { report("글꼴: 텍스트를 선택하세요"); return; }
+  if (!ranges || !ranges.length) { report(t("msg.fontNeedsSel")); return; }
   edit(() => {
     const json = S.conv.set_family_ranges(JSON.stringify(ranges), family);
     S.caret = { path: ranges[0].path, off: ranges[0].start };
@@ -63,7 +64,7 @@ export function applyFontFamily(family: string) {
 // stale — re-derive the selection from document offsets instead.
 export function applyFontColor(hex: string) {
   const ranges = selectionRanges();
-  if (!ranges || !ranges.length) { report("색: 텍스트를 선택하세요"); return; }
+  if (!ranges || !ranges.length) { report(t("msg.colorNeedsSel")); return; }
   const first = ranges[0], last = ranges[ranges.length - 1];
   edit(() => S.conv.set_color_ranges(JSON.stringify(ranges), hex));
   const a = refForOffset(first.path, first.start, false);
@@ -85,7 +86,7 @@ export function styleSelection(styleId: string) {
     for (let i = idx(r.pa); i <= idx(r.pb); i++) paths.push(r.pa.replace(/\d+$/, String(i)));
   } else if (r) paths = [r.pa];
   else if (S.caret) paths = [S.caret.path];
-  if (!paths.length) { report("스타일: 캐럿을 두세요"); return; }
+  if (!paths.length) { report(t("msg.styleNeedsCaret")); return; }
   const keep = S.caret && { ...S.caret };
   edit(() => {
     const json = S.conv.set_style_paths(JSON.stringify(paths), styleId);
@@ -123,7 +124,7 @@ function selectedParagraphPaths(): { paths: string[]; keep: { path: string; off:
 // (kept in place when there was one; text offsets are unchanged).
 export function toggleList(kind: "bullet" | "number") {
   const sel = selectedParagraphPaths();
-  if (!sel) { report("목록: 캐럿을 두거나 선택하세요"); return; }
+  if (!sel) { report(t("msg.listNeedsCaret")); return; }
   edit(() => {
     const json = S.conv.toggle_list_paths(JSON.stringify(sel.paths), kind === "bullet");
     S.caret = sel.keep;
@@ -136,7 +137,7 @@ export function toggleList(kind: "bullet" | "number") {
 // Spacing reflows lines, so the selection collapses to a caret too.
 export function applyLineSpacing(multiple: number) {
   const sel = selectedParagraphPaths();
-  if (!sel) { report("줄 간격: 캐럿을 두거나 선택하세요"); return; }
+  if (!sel) { report(t("msg.spacingNeedsCaret")); return; }
   edit(() => {
     const json = S.conv.set_line_spacing_paths(JSON.stringify(sel.paths), multiple);
     S.caret = sel.keep;
@@ -231,7 +232,7 @@ export function updateToolbarState() {
 // Table structure ops act on the caret's cell (top-level tables).
 export function tableOp(op: string) {
   if (!S.caret || !/^d\/\d+\.\d+\.\d+\.\d+$/.test(S.caret.path)) {
-    report("표 셀에 캐럿을 두세요");
+    report(t("msg.needsCellCaret"));
     return;
   }
   const keep = { ...S.caret };
@@ -250,7 +251,7 @@ let tablePending: string | null = null; // caret's body paragraph path
 export function openTableBar() {
   const c = S.caret;
   if (!c || !/^d\/\d+$/.test(c.path)) {
-    report("표: 본문 문단에 캐럿을 두세요");
+    report(t("msg.tableNeedsBody"));
     return;
   }
   tablePending = c.path;
@@ -265,7 +266,7 @@ export function closeTableBar() {
 
 export function applyInsertTable(rows: number, cols: number) {
   const path = tablePending ?? (S.caret && /^d\/\d+$/.test(S.caret.path) ? S.caret.path : null);
-  if (!path) { report("표: 본문 문단에 캐럿을 두세요"); return; }
+  if (!path) { report(t("msg.tableNeedsBody")); return; }
   const tableIndex = +path.match(/(\d+)$/)![1] + 1;
   edit(() => {
     const json = S.conv.insert_table_after(path, rows, cols);
@@ -283,7 +284,7 @@ export function mergeCells() {
   let paths: string[];
   if (cs) {
     if (cs.r0 !== cs.r1) {
-      report("세로(여러 행) 병합은 아직 미지원 — 한 행의 셀만 선택하세요");
+      report(t("msg.mergeVertical"));
       return;
     }
     paths = [];
@@ -291,7 +292,7 @@ export function mergeCells() {
     clearCellSel();
   } else {
     const r = selRange();
-    if (!r || r.kind !== "scatter") { report("병합: 표에서 셀들을 드래그로 선택하세요"); return; }
+    if (!r || r.kind !== "scatter") { report(t("msg.mergeNeedsSel")); return; }
     paths = [...new Set(r.ranges.map((x) => x.path))];
   }
   const first = paths[0];
@@ -306,7 +307,7 @@ export function mergeCells() {
 // Split the horizontally merged cell under the caret back into columns.
 export function splitCell() {
   if (!S.caret || !/^d\/\d+\.\d+\.\d+\.\d+$/.test(S.caret.path)) {
-    report("분할: 병합된 셀에 캐럿을 두세요");
+    report(t("msg.splitNeedsMerged"));
     return;
   }
   const keep = { ...S.caret };
@@ -329,7 +330,7 @@ export function applyCellShading(hex: string) {
   } else if (S.caret && /^d\/\d+\.\d+\.\d+\.\d+$/.test(S.caret.path)) {
     paths = [S.caret.path];
   } else {
-    report("셀 배경: 셀 블록을 선택하거나 셀에 캐럿을 두세요");
+    report(t("msg.shadeNeedsCell"));
     return;
   }
   const keep = S.caret && { ...S.caret };
@@ -353,7 +354,7 @@ function currentTablePath(): string | null {
 
 export function openBorderBar() {
   if (!currentTablePath()) {
-    report("표 테두리: 표 안에 캐럿을 두세요");
+    report(t("msg.bordersNeedTable"));
     return;
   }
   document.getElementById("borderbar")!.hidden = false;
@@ -365,7 +366,7 @@ export function closeBorderBar() {
 
 export function applyTableBorders() {
   const path = currentTablePath();
-  if (!path) { report("표 테두리: 표 안에 캐럿을 두세요"); return; }
+  if (!path) { report(t("msg.bordersNeedTable")); return; }
   const style = (document.getElementById("borderstyle") as HTMLSelectElement).value;
   const width = +(document.getElementById("borderwidth") as HTMLSelectElement).value;
   const color = (document.getElementById("bordercolor") as HTMLInputElement).value

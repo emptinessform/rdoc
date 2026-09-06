@@ -33,7 +33,10 @@ window.__benchResult = "pending";
   document.querySelector('#menubar [data-cmd="docStats"]').click();
   const status = document.getElementById("status").textContent;
   res.info.status = status;
-  check("status shows stats", status.includes("페이지") && status.includes("단어"));
+  // Locale-independent: the status line is localized, the numbers are not.
+  const now = t.docStats();
+  check("status shows stats",
+    status.includes(String(now.pages)) && status.includes(String(now.words)));
 
   window.__benchResult = JSON.stringify(res);
 })().catch(e => { window.__benchResult = "ERR: " + e; });

@@ -9,6 +9,7 @@ import { pagesEl, report } from "./render.js";
 import { edit } from "./edit.js";
 import { tableGeom, tablesOnPage } from "./tablegeo.js";
 import type { TableGeom } from "./tablegeo.js";
+import { t } from "./i18n/index.js";
 
 const HANDLE_PT = 9;   // handle square size
 const HOVER_PAD = 16;  // bbox padding that keeps handles alive while hovering
@@ -213,6 +214,6 @@ export function wireTableHandles() {
       S.sel = null;
       return json;
     });
-    report(`표를 ${from} → ${to} 위치로 이동`);
+    report(t("msg.tableMoved", { from, to }));
   }, { capture: true });
 }

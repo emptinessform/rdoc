@@ -5,6 +5,7 @@
 import { S, chars, allHits, cum } from "./state.js";
 import { pagesEl, report } from "./render.js";
 import { edit, selectionRanges } from "./edit.js";
+import { t } from "./i18n/index.js";
 
 interface CommentInfo { id: number; author: string | null; text: string; resolved: boolean }
 interface CommentSpan { id: number; path: string; start: number; end: number }
@@ -50,7 +51,7 @@ export function toggleComments(on?: boolean) {
   let n = 0;
   try { n = fetchList().length; } catch (e) { /* no document */ }
   drawCommentHl();
-  report(commentsOn ? `주석 표시 켬 (${n}개)` : "주석 표시 끔");
+  report(commentsOn ? t("msg.commentsOn", { n }) : t("msg.commentsOff"));
 }
 
 // The comment id under the caret (independent of the display toggle),
@@ -73,7 +74,7 @@ let pendingRange: { path: string; start: number; end: number } | null = null;
 export function openCommentBar() {
   const ranges = selectionRanges();
   if (!ranges || ranges.length !== 1 || !/^d\/\d+$/.test(ranges[0].path)) {
-    report("주석: 본문 문단 안에서 텍스트를 선택하세요");
+    report(t("msg.commentNeedsSel"));
     return;
   }
   pendingRange = ranges[0];
@@ -89,7 +90,7 @@ export function closeCommentBar() {
 
 export function applyComment(text: string) {
   const r = pendingRange;
-  if (!text || !r) { report("주석: 대상 선택과 내용이 필요합니다"); return; }
+  if (!text || !r) { report(t("msg.commentNeedsText")); return; }
   edit(() => {
     const json = S.conv.add_comment(r.path, r.start, r.end, "rdoc", text);
     S.caret = { path: r.path, off: r.end };
@@ -103,7 +104,7 @@ export function applyComment(text: string) {
 
 export function removeCommentAtCaret() {
   const id = commentIdAtCaret();
-  if (id === null) { report("주석: 캐럿을 주석 범위에 두세요"); return; }
+  if (id === null) { report(t("msg.commentNeedsCaret")); return; }
   const keep = S.caret && { ...S.caret };
   edit(() => {
     const json = S.conv.remove_comment(id);
@@ -115,7 +116,7 @@ export function removeCommentAtCaret() {
 
 export function resolveCommentAtCaret() {
   const id = commentIdAtCaret();
-  if (id === null) { report("주석: 캐럿을 주석 범위에 두세요"); return; }
+  if (id === null) { report(t("msg.commentNeedsCaret")); return; }
   let resolved = true;
   try {
     const cur = fetchList().find((c) => c.id === id);
@@ -128,7 +129,7 @@ export function resolveCommentAtCaret() {
     S.sel = null;
     return json;
   });
-  report(resolved ? "주석을 해결됨으로 표시" : "주석 해결을 취소");
+  report(t(resolved ? "msg.commentResolved" : "msg.commentUnresolved"));
 }
 
 export function wireCommentBar() {
@@ -151,6 +152,10 @@ export function commentAtCaret(): string | null {
     if (!sp) return null;
     const c = fetchList().find((x) => x.id === sp.id);
     if (!c) return null;
-    return `주석(${c.author ?? "?"})${c.resolved ? " [해결됨]" : ""}: ${c.text}`;
+    return t("msg.commentStatus", {
+      author: c.author ?? "?",
+      resolved: c.resolved ? t("msg.commentResolvedTag") : "",
+      text: c.text,
+    });
   } catch (e) { return null; }
 }

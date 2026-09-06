@@ -9,6 +9,7 @@ import { drawCaret, drawSelection, refForOffset } from "./view.js";
 import { edit, replaceSelWith } from "./edit.js";
 import type { ParaRange } from "./edit.js";
 import { imeEl } from "./ime.js";
+import { t } from "./i18n/index.js";
 
 const findbar = document.getElementById("findbar")!;
 export const findq = document.getElementById("findq") as HTMLInputElement;
@@ -116,7 +117,7 @@ export function gotoFind(dir: number) {
     if (rc.top < m.top || rc.bottom > m.bottom)
       scroller.scrollBy({ top: rc.top - (m.top + m.height / 2) });
   }
-  report(`찾기 ${findCur + 1}/${findMatches.length}`);
+  report(t("msg.findAt", { cur: findCur + 1, total: findMatches.length }));
 }
 
 export function openFind() {
@@ -170,7 +171,7 @@ export function replaceAll() {
     S.sel = null;
     return json;
   });
-  report(`모두 바꾸기: ${n}건`);
+  report(t("msg.replacedAll", { n }));
 }
 
 export function wireFind() {

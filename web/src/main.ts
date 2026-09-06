@@ -38,6 +38,7 @@ import { wireColResize } from "./colresize.js";
 import { cellSel, setCellSel, clearCellSel } from "./cellsel.js";
 import { wireTableHandles } from "./tablehandle.js";
 import { wireImageResize } from "./imgresize.js";
+import { t } from "./i18n/index.js";
 
 declare global {
   interface Window {
@@ -112,7 +113,7 @@ async function loadFonts() {
   for (const name of SERIF_ALIASES) alias(name, serif);
 }
 await loadFonts();
-status("ready — load the demo or open a .docx");
+status(t("msg.ready"));
 
 // First visit shows a document, not an empty gray page: load the
 // built-in demo right away (the demo button reloads it fresh, so the
@@ -173,7 +174,7 @@ fileEl.onchange = async () => {
     const t = performance.now();
     apply(S.conv.render(), performance.now() - t);
   } catch (err) {
-    status(`열기 실패: ${f.name} — ${err}`);
+    status(t("msg.openFailed", { name: f.name, err: String(err) }));
   }
 };
 

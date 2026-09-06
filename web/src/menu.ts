@@ -20,7 +20,7 @@ export function toggleTrackedView(on?: boolean) {
   S.sel = null;
   const json = S.conv.set_revision_view(S.trackedView);
   apply(json, 0);
-  report(S.trackedView ? "변경 내용 표시 켬 (읽기 전용)" : "변경 내용 표시 끔");
+  report(t(S.trackedView ? "msg.trackOn" : "msg.trackOff"));
 }
 import {
   doUndo, doRedo, selectAll, insertFootnote, insertEndnote, deleteNote,
@@ -33,6 +33,7 @@ import {
   openTableBar, openBorderBar,
 } from "./format.js";
 import { openLinkBar, removeLink } from "./link.js";
+import { t } from "./i18n/index.js";
 
 // Page-setup presets (pt): paper sizes are portrait dimensions — the
 // wasm op preserves the current orientation.
@@ -59,24 +60,24 @@ async function loadSample(url: string, after?: () => void) {
     apply(S.conv.render(), performance.now() - t0);
     after?.();
   } catch (e) {
-    report(`샘플 열기 실패: ${e}`);
+    report(t("msg.sampleFailed", { err: String(e) }));
   }
 }
 
 const COMMANDS: Record<string, () => void> = {
   openFile: () => (document.getElementById("file") as HTMLInputElement).click(),
   sampleReport: () => void loadSample("./report-sample.docx", () => {
-    report("사업 리포트 샘플 — 제목 스타일·리스트·표·링크·서식 종합");
+    report(t("msg.sampleReport"));
   }),
   sampleTrack: () => void loadSample("./trackview-test.docx", () => {
     if (!S.trackedView) toggleTrackedView(true);
-    report("변경 추적 샘플 — 보기 메뉴에서 표시를 끄면 최종본");
+    report(t("msg.sampleTrack"));
   }),
   sampleComment: () => void loadSample("./comment-test.docx", () => {
     toggleComments(true);
   }),
   sampleFonts: () => void loadSample("./fontmap-test.docx", () => {
-    report("한국어 글꼴 매핑 샘플 — 굴림·돋움은 산세리프, 바탕·궁서는 세리프");
+    report(t("msg.sampleFonts"));
   }),
   savePdf: () => {
     try {
@@ -87,16 +88,16 @@ const COMMANDS: Record<string, () => void> = {
       a.download = "rdoc.pdf";
       a.click();
       URL.revokeObjectURL(a.href);
-      report(`PDF 저장: ${bytes.length.toLocaleString()} bytes`);
+      report(t("msg.pdfSaved", { bytes: bytes.length.toLocaleString() }));
     } catch (err) {
-      report(`PDF 저장 실패: ${err}`);
+      report(t("msg.pdfFailed", { err: String(err) }));
     }
   },
   docStats: () => {
     try {
       const st = JSON.parse(S.conv.doc_stats());
-      report(`페이지 ${st.pages} · 문단 ${st.paragraphs} · 단어 ${st.words} · 문자 ${st.chars} (공백 제외 ${st.chars_no_space})`);
-    } catch (e) { report("문서를 먼저 여세요"); }
+      report(t("msg.stats", { pages: st.pages, paragraphs: st.paragraphs, words: st.words, chars: st.chars, noSpace: st.chars_no_space }));
+    } catch (e) { report(t("msg.openFirst")); }
   },
   paperA4: () => pageOp(() => S.conv.set_paper(595.3, 841.9)),
   paperLetter: () => pageOp(() => S.conv.set_paper(612, 792)),
@@ -129,7 +130,7 @@ const COMMANDS: Record<string, () => void> = {
   paste: async () => {
     // Programmatic clipboard reads need a permission real Ctrl+V doesn't.
     try { doPaste(await navigator.clipboard.readText()); }
-    catch (e) { report("붙여넣기는 Ctrl+V를 사용하세요 (브라우저 권한)"); }
+    catch (e) { report(t("msg.pasteShortcut")); }
   },
   selectAll,
   find: openFind,

@@ -10,6 +10,7 @@ export type SelRange =
   | { kind: "scatter"; ranges: ParaRange[] };
 import { apply, report } from "./render.js";
 import { drawCaret, drawSelection, lineEdgeOff, lineTarget } from "./view.js";
+import { t } from "./i18n/index.js";
 
 /// Selection endpoints as an ordered document range, or null when either
 /// endpoint has no provenance mapping.
@@ -71,13 +72,13 @@ export function edit(fn: () => string) {
   // Single choke point for every mutation (toolbar, menus, keyboard,
   // test hooks): the tracked-changes view is read-only.
   if (S.trackedView) {
-    report("변경 내용 표시 중 — 편집하려면 보기에서 표시를 끄세요");
+    report(t("msg.trackReadonly"));
     return;
   }
-  const t = performance.now();
+  const t0 = performance.now();
   try {
     const json = fn();
-    apply(json, performance.now() - t);
+    apply(json, performance.now() - t0);
   } catch (err) {
     report(`error: ${err}`);
   }
@@ -162,7 +163,7 @@ export function mergePrev() {
 
 export function toggleFmt(f: string) {
   const ranges = selectionRanges();
-  if (!ranges || !ranges.length) { report("select some text first (Ctrl+B/I/U)"); return; }
+  if (!ranges || !ranges.length) { report(t("msg.fmtNeedsSel")); return; }
   edit(() => {
     const json = S.conv.toggle_ranges(JSON.stringify(ranges), f);
     S.sel = null;
@@ -174,7 +175,7 @@ export function toggleFmt(f: string) {
 
 export function insertFootnote() {
   const c = S.caret;
-  if (!c || !c.path.startsWith("d/")) { report("각주는 본문에서만 삽입"); return; }
+  if (!c || !c.path.startsWith("d/")) { report(t("msg.footnoteBodyOnly")); return; }
   edit(() => {
     const json = S.conv.insert_footnote(c.path, c.off);
     const id = S.conv.last_note_id();
@@ -186,7 +187,7 @@ export function insertFootnote() {
 
 export function deleteFootnote() {
   const c = S.caret;
-  if (!c || !c.path.startsWith("fn/")) { report("각주 안에 캐럿을 두고 Ctrl+Alt+D"); return; }
+  if (!c || !c.path.startsWith("fn/")) { report(t("msg.footnoteDelete")); return; }
   edit(() => {
     const json = S.conv.delete_footnote(c.path);
     S.caret = null;
@@ -197,7 +198,7 @@ export function deleteFootnote() {
 
 export function insertEndnote() {
   const c = S.caret;
-  if (!c || !c.path.startsWith("d/")) { report("미주는 본문에서만 삽입"); return; }
+  if (!c || !c.path.startsWith("d/")) { report(t("msg.endnoteBodyOnly")); return; }
   edit(() => {
     const json = S.conv.insert_endnote(c.path, c.off);
     const id = S.conv.last_note_id();
@@ -209,7 +210,7 @@ export function insertEndnote() {
 
 export function deleteEndnote() {
   const c = S.caret;
-  if (!c || !c.path.startsWith("en/")) { report("미주 안에 캐럿을 두고 Ctrl+Alt+D"); return; }
+  if (!c || !c.path.startsWith("en/")) { report(t("msg.endnoteDelete")); return; }
   edit(() => {
     const json = S.conv.delete_endnote(c.path);
     S.caret = null;

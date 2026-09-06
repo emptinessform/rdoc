@@ -7,6 +7,7 @@ import { drawCaret, drawSelection, refForOffset } from "./view.js";
 import { edit, selectionRanges } from "./edit.js";
 import type { ParaRange } from "./edit.js";
 import { orderSel } from "./state.js";
+import { t } from "./i18n/index.js";
 
 const linkbar = () => document.getElementById("linkbar")!;
 const linkq = () => document.getElementById("linkq") as HTMLInputElement;
@@ -19,7 +20,7 @@ export function openLinkBar() {
   const ranges = selectionRanges();
   const caretIn = S.caret && linkUrlAt(S.caret.path, S.caret.off);
   if ((!ranges || ranges.length !== 1) && !caretIn) {
-    report("링크: 한 문단 안에서 텍스트를 선택하세요");
+    report(t("msg.linkNeedsSel"));
     return;
   }
   pending = ranges && ranges.length === 1 ? ranges[0] : null;
@@ -42,8 +43,8 @@ export function linkUrlAt(path: string, off: number): string | null {
 // Wrap the captured selection (or the current one) in a link.
 export function applyLink(url: string) {
   const r = pending ?? (selectionRanges()?.length === 1 ? selectionRanges()![0] : null);
-  if (!url || !r) { report("링크: 대상 선택이 없습니다"); return; }
-  if (!r.path.startsWith("d/")) { report("링크는 본문에서만 지원"); return; }
+  if (!url || !r) { report(t("msg.linkNoTarget")); return; }
+  if (!r.path.startsWith("d/")) { report(t("msg.linkBodyOnly")); return; }
   edit(() => {
     const json = S.conv.set_hyperlink(r.path, r.start, r.end, url);
     S.caret = { path: r.path, off: r.end };
@@ -60,7 +61,7 @@ export function applyLink(url: string) {
 export function removeLink() {
   const at = S.caret ? { path: S.caret.path, off: S.caret.off }
     : pending ? { path: pending.path, off: pending.start } : null;
-  if (!at || !linkUrlAt(at.path, at.off)) { report("링크: 캐럿을 링크 위에 두세요"); return; }
+  if (!at || !linkUrlAt(at.path, at.off)) { report(t("msg.linkNeedsCaret")); return; }
   const keep = { ...at };
   edit(() => {
     const json = S.conv.remove_hyperlink(keep.path, keep.off);
