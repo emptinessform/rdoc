@@ -269,6 +269,11 @@ impl<'a> SvgRenderer<'a> {
         for el in elements {
             match el {
                 PositionedElement::Text(run) => self.emit_glyph_run(out, run),
+                // v0.12.0 wraps drawing elements in tagged-structure
+                // containers; they add no geometry, so emit through.
+                PositionedElement::MarkedContent { children, .. } => {
+                    self.emit_elements(out, children)
+                }
                 PositionedElement::Line {
                     start,
                     end,
@@ -469,6 +474,9 @@ impl<'a> SvgRenderer<'a> {
                         r.push_hit(run);
                     }
                     PositionedElement::Group(g) => walk(r, &g.children),
+                    // v0.12.0 wraps drawing elements in tagged-structure
+                    // containers; they carry no geometry of their own.
+                    PositionedElement::MarkedContent { children, .. } => walk(r, children),
                     _ => {}
                 }
             }
@@ -974,6 +982,7 @@ fn fnv(bytes: &[u8]) -> u64 {
 fn hash_elements(elements: &[PositionedElement], h: &mut Fnv) {
     for el in elements {
         match el {
+            PositionedElement::MarkedContent { children, .. } => hash_elements(children, h),
             PositionedElement::Text(r) => {
                 h.bytes(b"t");
                 h.f64(r.origin.x);
